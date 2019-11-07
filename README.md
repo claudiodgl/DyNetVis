@@ -8,5 +8,7 @@ language, aiming the support for different platforms. The system is developed
 using a graph library called jgraphx, that provides functionalities
 for graph visualization and interaction using Java language.
 
-# Check readme.pdf for the Software Documentation.
+# Software Documentation
+
+Check the file readme.pdf for the software documentation.
 
