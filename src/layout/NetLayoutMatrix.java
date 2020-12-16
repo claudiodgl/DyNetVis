@@ -232,7 +232,7 @@ public class NetLayoutMatrix extends Observable implements Runnable{
                     String hexColor = "#"+Integer.toHexString(colorNode.getRGB()).substring(2);
 
                     att = new MatrixNodeAttribute(node1+" "+node2, node1+1,node2+1,false, true);
-                    
+
                     ArrayList<Integer> times = att.getListTime();
                     if(!times.contains(time))
                         times.add(time);
@@ -381,11 +381,15 @@ public class NetLayoutMatrix extends Observable implements Runnable{
         }
         
 
+        boolean weight_external_file = false;
+        HashMap<String,Integer> edgeWeight_external_file = new HashMap();
+
+
         //CALCULO DO ALGORITMO DE COMUNIDADE INFOMAP E LOUVAIN
-        comunidadesLouvain = new SLM_Louvain().execute(listAttNodes, listAllEdges, "Original Louvain");
+        comunidadesLouvain = new SLM_Louvain().execute(listAttNodes, listAllEdges, "Original Louvain", false,weight_external_file,edgeWeight_external_file);
         comunidades = comunidadesLouvain;
 
-        comunidadesInfomap = new communities.InfoMap().execute(listAllEdges, listAttNodes);
+        comunidadesInfomap = new communities.InfoMap().execute(listAllEdges, listAttNodes, false,weight_external_file,edgeWeight_external_file);
         //new MainForm().imprimeComunidadesArquivo(comunidadesLouvain, "Infomap");
          //FIM CALCULO ALGORITMO DE COMUNIDADE INFOMAP E LOUVAIN
 

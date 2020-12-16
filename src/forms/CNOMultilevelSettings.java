@@ -316,7 +316,7 @@ public class CNOMultilevelSettings extends JDialog {
         
         JFileChooser openDialog = new JFileChooser();
         String filename = "";
-        
+        filename = this.frame.getPathDataset();
         
         openDialog.resetChoosableFileFilters();
         openDialog.setAcceptAllFileFilterUsed(false);

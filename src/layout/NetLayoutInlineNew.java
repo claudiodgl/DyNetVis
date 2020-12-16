@@ -56,6 +56,7 @@ import com.mxgraph.swing.mxGraphComponent;
 import com.mxgraph.util.mxConstants;
 import com.mxgraph.util.mxUtils;
 import com.mxgraph.view.mxGraph;
+import com.mxgraph.view.mxGraphSelectionModel;
 import com.mxgraph.view.mxGraphView;
 import java.awt.Color;
 import java.io.BufferedReader;
@@ -105,6 +106,11 @@ import java.util.concurrent.TimeUnit;
 import javax.swing.JOptionPane;
 import util.FileHandler;
 
+import com.clearspring.analytics.stream.Counter;
+import com.clearspring.analytics.stream.StreamSummary;
+import java.util.stream.*; 
+import java.util.function.*; 
+
 
 public class NetLayoutInlineNew extends NetLayout {
     
@@ -112,7 +118,7 @@ public class NetLayoutInlineNew extends NetLayout {
     public ArrayList<HashMap<Integer, List<InlineNodeAttribute>>> orderNodesEdgeLength = new ArrayList<>();
     public static String txtComunidadesROCMultilevel = ".//Softwares_Comunidade//ROC_Multilevel_Comunidades.txt";
     private static String txtOutliersROCMultilevel = ".//Softwares_Comunidade//Nos_Sem_Comunidades_ROC_Multilevel_Comunidades.txt";
-    public boolean imprimirTxtComunidadesROCMultilevel = true;
+    public boolean imprimirTxtComunidadesROCMultilevel = true, showInlineNodes = true;
     public int qtosNiveisCNOUsuarioQuer = 1;
     public int stateCommunityROCMultiLevel = 0;
     private int deslocamento,shiftX;
@@ -124,8 +130,42 @@ public class NetLayoutInlineNew extends NetLayout {
     Map<String, Object> styleEdge, styleNode;
     public mxGraphComponent graphComponentScalarInline, graphComponentLine , graphComponentScalarEdgeInline;
     
-    MainForm f;
     
+    private int qtdInstantesPlotadasSeForStream = 100;
+
+   
+    private ArrayList<Integer> instantesEmQueLimpouOLayoutStream = new ArrayList<>();
+    public int ultimoTimestepPlottedStreamTemporal = -1;
+    public int thresholdNoAtivoStream = 5; //Se o nó ficar mais que thresholdNoAtivo instantes de tempo sem atividade, ele é considerado inativo.
+    public String styleHorizontalLineSteam;
+    public boolean showEdgesStream = true;
+    public int resolucaoAnteriorStream = 1, resolucaoAnteriorStreamMP = 1;
+    public int resolucaoAtualStream = 1;
+    
+    public static boolean isResolucaoDinamica = false;
+    public MainForm f;
+ public int tempoInicialIntervalo = 0;
+    private int timestampUltimaArestaResolucaoAnterior = 0;
+    private int timestampUltimaArestaPlotada = 0;
+    private boolean jaPuleiTimestampsResolucaoAnterior = false;
+    private int timestampReferenciaPraPlotarNovaResolucao = 0;
+    private int ultimoIntervaloCalculadoResolucao = 0;
+    private String corResolucao = "#000080";
+    
+    //Testes Stream
+    public double pesoResolucaoAnteriorNaNova = 0.2;
+    public static double fadingFactor;
+    public static int windowSizeValue;
+    public static String redeSendoTestadaStream = "Hospital1";
+    private boolean hasMetadataNodes = false;
+    public static boolean hasOrdenacaoPrevia = true;
+    
+    public static boolean resolucaoDinamicaRedeEstatica;
+    public static int[] resolucaoEmCadaTimestamp;
+    
+    public static int[] linegraphStream;
+    public boolean exibirNivelAtividadeNos = false;
+    public ArrayList<String> lineNodesSelecionadosStream;
     public double pesoPt4LineGraphStream = 0.5, pesoPt3LineGraphStream = 0.3, pesoPt2LineGraphStream = 0.15, pesoPt1LineGraphStream = 0.05;
     
     public NetLayoutInlineNew() {
@@ -402,27 +442,29 @@ public class NetLayoutInlineNew extends NetLayout {
     public boolean openFileCNO = false;
     public String pathFileCNO = "";
     
+    
+    
     public void orderNodesInline(String order, mxGraphComponent matriz){
-        
+        if(listAttNodes.isEmpty())
+            getWeightEstruturalToInline(matriz);
         switch (order) {
             case "Appearance":
                 orderBirth();
                 //verifyAvgEdgesSize();
                 break;
+            case "Selected Nodes":
+                orderSelectedNodes();
+                break;
             case "Random":
-                if(listAttNodes.isEmpty())
-                    getWeightEstruturalToInline(matriz);
                 randomNodeOrdering();
                 //verifyAvgEdgesSize();
                 break;
             case "Lexicographic":
+                
                 orderLexicographic();
                 //verifyAvgEdgesSize();
                 break;
             case "Degree":
-                if(listAttNodes.isEmpty())
-                    getWeightEstruturalToInline(matriz);
-                Collections.sort(listAttNodes);
                 orderDegree();
                 //verifyAvgEdgesSize();
                 break;
@@ -453,15 +495,10 @@ public class NetLayoutInlineNew extends NetLayout {
                 visualizaNos(vis);
                 break;
             case "Recurrent Neighbors":
-                if(listAttNodes.isEmpty())
-                    getWeightEstruturalToInline(matriz);
-                Collections.sort(listAttNodes);
                 orderRecurrentNeighbors();
                 //verifyAvgEdgesSize();
                 break;
             case "Minimize Edge Length":
-                if(listAttNodes.isEmpty())
-                    getWeightEstruturalToInline(matriz);
                 if(openFileEdgeLength)
                 {
                     try {
@@ -475,8 +512,6 @@ public class NetLayoutInlineNew extends NetLayout {
                 //verifyAvgEdgesSize();
                 break;
             case "Inverse Recurrent Neighbors":
-                if(listAttNodes.isEmpty())
-                    getWeightEstruturalToInline(matriz);
                 Collections.sort(listAttNodes);
                 orderInverseRecurrentNeighbors();
                 //verifyAvgEdgesSize();
@@ -486,20 +521,18 @@ public class NetLayoutInlineNew extends NetLayout {
                 //verifyAvgEdgesSize();
                 //break;
             case "CPM":
-                if(listAttNodes.isEmpty())
-                    getWeightEstruturalToInline(matriz);
                 Collections.sort(listAttNodes);
                 orderCPM();
                 //verifyAvgEdgesSize();
                 break;  
             case "CNO":
-                if(listAttNodes.isEmpty())
-                    getWeightEstruturalToInline(matriz);
-                Collections.sort(listAttNodes);
+                List<InlineNodeAttribute> listAttNodesBackup = new ArrayList();
+                listAttNodesBackup.addAll(listAttNodes);
+                Collections.sort(listAttNodesBackup);
                 if(openFileCNO)
                 {
                     try {
-                        comunidadesROCMultilevel = FileHandler.leArquivoROC(pathFileCNO, listAttNodes);
+                        comunidadesROCMultilevel = FileHandler.leArquivoROC(pathFileCNO, listAttNodesBackup);
                     } catch (Exception ex) {
                         Logger.getLogger(NetLayoutInlineNew.class.getName()).log(Level.SEVERE, null, ex);
                     }
@@ -513,9 +546,10 @@ public class NetLayoutInlineNew extends NetLayout {
                 //verifyAvgEdgesSize();
                 break;
             case "File":
-                if(listAttNodes.isEmpty())
-                    getWeightEstruturalToInline(matriz);
-                Collections.sort(listAttNodes);
+                
+                listAttNodesBackup = new ArrayList();
+                listAttNodesBackup.addAll(listAttNodes);
+                Collections.sort(listAttNodesBackup);
                 
                 ArrayList<Integer> nosRede = FileHandler.GetNosOrdenacaoPrevia();
                 HashMap<Integer, List<InlineNodeAttribute>> ordemNos = new HashMap<>();
@@ -527,7 +561,7 @@ public class NetLayoutInlineNew extends NetLayout {
                     for(Integer no : nosRede)
 
                     {
-                        for(InlineNodeAttribute nodeAtt : listAttNodes)
+                        for(InlineNodeAttribute nodeAtt : listAttNodesBackup)
 
                         {
                             if(nodeAtt.getId_original() == no)
@@ -958,7 +992,7 @@ public class NetLayoutInlineNew extends NetLayout {
                     att.setHeightEdge_atual(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20)));
                     g.setHeight(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20))); 
                     cell.setGeometry(g);
-                    graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX  - moveEdgeSizeX, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 24);
+                    graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX - moveEdgeSizeX,  (zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35)+15*spaceBetweenLines );
                 }
         }
         
@@ -968,9 +1002,15 @@ public class NetLayoutInlineNew extends NetLayout {
         graph.repaint();
     }
     
-    
-    public void orderRecurrentNeighbors()
+    @Deprecated
+    public void orderRecurrentNeighborsOld()
     {
+        
+        List<InlineNodeAttribute> listAttNodesBackup = new ArrayList();
+        listAttNodesBackup.addAll(listAttNodes);
+        Collections.sort(listAttNodesBackup);
+
+        
         ArrayList<Integer> nodesLeft = new ArrayList();
         nodesLeft.addAll(lineNodes);
         
@@ -978,7 +1018,7 @@ public class NetLayoutInlineNew extends NetLayout {
         
         graph.getModel().beginUpdate();
         int position_up, position_down;
-        InlineNodeAttribute lastNode = listAttNodes.get(listAttNodes.size()-1);
+        InlineNodeAttribute lastNode = listAttNodesBackup.get(listAttNodesBackup.size()-1);
         nodesLeft.remove(Integer.valueOf(lastNode.getId_original()));
         Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
         for (Object root1 : roots) {
@@ -991,7 +1031,7 @@ public class NetLayoutInlineNew extends NetLayout {
                 graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
                 if(lastNode.getId_original() == att.getId_original())
                 {
-                    att.setY_atual((int)listAttNodes.size()/2);
+                    att.setY_atual((int)listAttNodesBackup.size()/2);
                     graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX -2.5 , zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
                 }
             }
@@ -999,8 +1039,8 @@ public class NetLayoutInlineNew extends NetLayout {
                 graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
                 if(lastNode.getId_original() == att.getId_original())
                 {
-                    nodesFinalOrderHeuristic[(int)listAttNodes.size()/2] = att.getId_original();
-                    att.setY_atual((int)listAttNodes.size()/2);
+                    nodesFinalOrderHeuristic[(int)listAttNodesBackup.size()/2] = att.getId_original();
+                    att.setY_atual((int)listAttNodesBackup.size()/2);
                     if(att.isLeft())
                         graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
                     else
@@ -1009,8 +1049,8 @@ public class NetLayoutInlineNew extends NetLayout {
                 currentTemporalNodeOrder.put(att.getId_original(),att.getY_atual());
             }
         }
-        position_up = (int)(listAttNodes.size()/2) - 1;
-        position_down = (int)(listAttNodes.size()/2) + 1;
+        position_up = (int)(listAttNodesBackup.size()/2) - 1;
+        position_down = (int)(listAttNodesBackup.size()/2) + 1;
         getNodesWithMoreConnections(lastNode.getId_original(),nodesLeft);
         Collections.sort(nodesWithConnections);
         int id_up = nodesWithConnections.get(0).getId(), id_down = 0;
@@ -1022,9 +1062,9 @@ public class NetLayoutInlineNew extends NetLayout {
         }
         else
         {
-            for(int i=listAttNodes.size()-1;i>=0;i--)
+            for(int i=listAttNodesBackup.size()-1;i>=0;i--)
             {
-                InlineNodeAttribute att = listAttNodes.get(i);
+                InlineNodeAttribute att = listAttNodesBackup.get(i);
                 if(nodesLeft.contains(att.getId_original()))
                 {
                     OccurrenceMap om = new OccurrenceMap(att.getId_original(),1);
@@ -1155,69 +1195,229 @@ public class NetLayoutInlineNew extends NetLayout {
             position_down++;
         }
         
-        //organizando as arestas após organizar os nós
+        
+        
+    }
+    
+    public void orderRecurrentNeighbors()
+    {
+        
+        List<InlineNodeAttribute> listAttNodesBackup = new ArrayList();
+        listAttNodesBackup.addAll(listAttNodes);
+        Collections.sort(listAttNodesBackup);
+
+        
+        ArrayList<Integer> nodesLeft = new ArrayList();
+        nodesLeft.addAll(lineNodes);
+        
+        int[] nodesFinalOrderHeuristic = new int[lineNodes.size()+1];
+        
+        int position_up, position_down;
+        InlineNodeAttribute lastNode = listAttNodesBackup.get(listAttNodesBackup.size()-1);
+        nodesLeft.remove(Integer.valueOf(lastNode.getId_original()));
+        Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
         for (Object root1 : roots) {
-                Object[] root = {root1};
-                mxCell cell = (mxCell) root1;
-                InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
-                
-                if(att.isEdge())
+            Object[] root = {root1};
+            mxCell cell = (mxCell) root1;
+            InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+            
+            //Move cells to origin point
+            if(att.isNode()){
+                graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
+                if(lastNode.getId_original() == att.getId_original())
                 {
-                    graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
-	
-	
-                    int y_inicial ;
-
-                    int i=0;
-                    for(int id : nodesFinalOrderHeuristic)
-                    {
-                            if(id == att.getOrigin() && i != 0)
-                               break;
-                            i++;
-                    }
-                    i++;
-                    int iD=0;
-                    for(int id : nodesFinalOrderHeuristic)
-                    {
-                            if(id == att.getDestiny() && iD != 0)
-                               break;
-                            iD++;
-                    }
-                    iD++;
-                    
-                    String styleShapeInline = cell.getStyle();
-                    
-                    if(i < iD)
-                    {
-                            y_inicial = i;
-
-                            styleShapeInline = styleShapeInline.replace(mxConstants.DIRECTION_SOUTH,mxConstants.DIRECTION_NORTH);
-                            att.setIsNorth(true);
-                    }
-                    else
-                    {
-                            y_inicial = iD;
-                            styleShapeInline = styleShapeInline.replace(mxConstants.DIRECTION_NORTH,mxConstants.DIRECTION_SOUTH);
-                            att.setIsNorth(false);
-                            
-                    }
-                    
-                    cell.setStyle(styleShapeInline);
-                    
-                    att.setY_atual(y_inicial);
-
-                    mxGeometry g = (mxGeometry) cell.getGeometry().clone();
-                    att.setHeightEdge_atual(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20)));
-                    g.setHeight(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20))); 
-                    cell.setGeometry(g);
-                    graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX  - moveEdgeSizeX, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 24);
+                    att.setY_atual((int)listAttNodesBackup.size()/2);
+                    graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX -2.5 , zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
                 }
+            }
+            if(att.isLineNode()){
+                graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
+                if(lastNode.getId_original() == att.getId_original())
+                {
+                    nodesFinalOrderHeuristic[(int)listAttNodesBackup.size()/2] = att.getId_original();
+                    att.setY_atual((int)listAttNodesBackup.size()/2);
+                    if(att.isLeft())
+                        graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
+                    else
+                        graph.moveCells(root, spacing*zoom* (att.getX_atual()+5+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
+                }
+                currentTemporalNodeOrder.put(att.getId_original(),att.getY_atual());
+            }
+        }
+        position_up = (int)(listAttNodesBackup.size()/2) - 1;
+        position_down = (int)(listAttNodesBackup.size()/2) + 1;
+        getNodesWithMoreConnections(lastNode.getId_original(),nodesLeft);
+        Collections.sort(nodesWithConnections);
+        int id_up = nodesWithConnections.get(0).getId(), id_down = 0;
+        nodesLeft.remove(nodesWithConnections.get(0).getId());
+        if(nodesWithConnections.size() != 1)
+        {
+            id_down = nodesWithConnections.get(1).getId();
+            nodesLeft.remove(nodesWithConnections.get(1).getId());
+        }
+        else
+        {
+            for(int i=listAttNodesBackup.size()-1;i>=0;i--)
+            {
+                InlineNodeAttribute att = listAttNodesBackup.get(i);
+                if(nodesLeft.contains(att.getId_original()))
+                {
+                    OccurrenceMap om = new OccurrenceMap(att.getId_original(),1);
+                    nodesWithConnections.add(om);
+                    id_down = att.getId_original();
+                    nodesLeft.remove(Integer.valueOf(id_down));
+                    break;
+                }
+            }
         }
         
         
-        graph.getModel().endUpdate();
-        graph.refresh();
-        graph.repaint();
+        
+        for (Object root1 : roots) {
+            Object[] root = {root1};
+            mxCell cell = (mxCell) root1;
+            InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+            //Move cells to origin point
+            if(att.isNode()){
+                if(id_up == att.getId_original())
+                {
+                    att.setY_atual(position_up);
+                    graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX -2.5, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
+                
+                }
+                else if(id_down == att.getId_original())
+                {
+                    att.setY_atual(position_down);
+                    graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX -2.5, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
+                }
+            }
+            if(att.isLineNode()){
+                if(id_up == att.getId_original())
+                {
+                    nodesFinalOrderHeuristic[position_up] = att.getId_original();
+                    att.setY_atual(position_up);
+                    if(att.isLeft())
+                        graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
+                    else
+                        graph.moveCells(root, spacing*zoom* (att.getX_atual()+5+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
+                    
+                    currentTemporalNodeOrder.put(att.getId_original(),att.getY_atual());
+                }
+                else if(id_down == att.getId_original())
+                {
+                    nodesFinalOrderHeuristic[position_down] = att.getId_original();
+                    att.setY_atual(position_down);
+                    if(att.isLeft())
+                        graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
+                    else
+                        graph.moveCells(root, spacing*zoom* (att.getX_atual()+5+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
+                    
+                    currentTemporalNodeOrder.put(att.getId_original(),att.getY_atual());
+                }
+            }
+        }
+        position_up--;
+        position_down++;
+        //preenchendo a parte de cima dos nós do meio
+        while(position_up != 0)
+        {
+            getNodeWithMoreConnections(id_up,nodesLeft);
+            id_up = nodesWithConnections.get(0).getId();
+            nodesLeft.remove(nodesWithConnections.get(0).getId());
+            
+            for (Object root1 : roots) {
+                Object[] root = {root1};
+                mxCell cell = (mxCell) root1;
+                InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+                //Move cells to origin point
+                if(att.isNode()){
+                    if(nodesWithConnections.get(0).getId() == att.getId_original())
+                    {
+                        att.setY_atual(position_up);
+                        graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX -2.5, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
+                    }
+                }
+                if(att.isLineNode()){
+                    if(nodesWithConnections.get(0).getId() == att.getId_original())
+                    {
+                        nodesFinalOrderHeuristic[position_up] = att.getId_original();
+                        att.setY_atual(position_up);
+                        if(att.isLeft())
+                            graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
+                        else
+                            graph.moveCells(root, spacing*zoom* (att.getX_atual()+5+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
+                        
+                        currentTemporalNodeOrder.put(att.getId_original(),att.getY_atual());
+                    }
+                }
+            }
+            position_up--;
+        }
+        
+        //preenchendo a parte de baixo dos nós do meio
+        while(position_down <= listAttNodes.size())
+        {
+            getNodeWithMoreConnections(id_down,nodesLeft);
+            id_down = nodesWithConnections.get(0).getId();
+            nodesLeft.remove(nodesWithConnections.get(0).getId());
+            
+            for (Object root1 : roots) {
+                Object[] root = {root1};
+                mxCell cell = (mxCell) root1;
+                InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+                //Move cells to origin point
+                if(att.isNode()){
+                    if(nodesWithConnections.get(0).getId() == att.getId_original())
+                    {
+                        att.setY_atual(position_down);
+                        graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX -2.5, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
+                    }
+                }
+                if(att.isLineNode()){
+                    if(nodesWithConnections.get(0).getId() == att.getId_original())
+                    {
+                        nodesFinalOrderHeuristic[position_down] = att.getId_original();
+                        att.setY_atual(position_down);
+                        if(att.isLeft())
+                            graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
+                        else
+                            graph.moveCells(root, spacing*zoom* (att.getX_atual()+5+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
+                        
+                        currentTemporalNodeOrder.put(att.getId_original(),att.getY_atual());
+                    }
+                }
+            }
+            position_down++;
+        }
+        
+        
+        List<InlineNodeAttribute> currentNodesIdOrder = new ArrayList();
+        
+        int x = 0;
+        for(Integer nodeId : nodesFinalOrderHeuristic)
+        {
+            if(x==0)    
+            {
+                x++;
+                continue;
+            }
+            InlineNodeAttribute att_node = null;
+            for(InlineNodeAttribute att : listAttNodes)
+            {
+                if(nodeId == att.getId_original())
+                {
+                    att_node = att;
+                    break;
+                }
+            }
+            currentNodesIdOrder.add(att_node);
+        }
+        HashMap<Integer,List<InlineNodeAttribute>> sequenciaDeEntrada = new HashMap();
+                        
+        sequenciaDeEntrada.put(0, currentNodesIdOrder);
+        
+        visualizaNos(sequenciaDeEntrada);
+        
     }
     
     
@@ -1351,205 +1551,103 @@ public class NetLayoutInlineNew extends NetLayout {
             }
         }
     }
-    
-    
-    public void orderLexicographic(){
-        ArrayList<Integer> orderLexic = new ArrayList();
-        orderLexic.addAll(lineNodes);
-        Collections.sort(orderLexic);
         
+    public void orderLexicographic(){
+
         graph.getModel().beginUpdate();
         
-        Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
-        for (Object root1 : roots) {
-            Object[] root = {root1};
-            mxCell cell = (mxCell) root1;
-            InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+        List<InlineNodeAttribute> currentNodesIdOrder = new ArrayList();
+        
+        if(!labelNodes.isEmpty())
+        {
+            ArrayList<String> orderLexic = new ArrayList();
             
-            //Move cells to origin point
-            if(att.isLineNode()){
-                graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
-                int i=1;
-                for(int at : orderLexic)
-                {
-                    if(at == att.getId_original())
-                       break;
-                    i++;
-                }
+            orderLexic.addAll(labelNodes);
+            Collections.sort(orderLexic, new Comparator<String>() {
+                @Override
+                public int compare(String s1, String s2) {
+                    if (s1.toLowerCase().equals(s1) && s2.toUpperCase().equals(s2)) {
+                        return 1;
+                    }
 
-                att.setY_atual(i);
-                if(att.isLeft())
-                    graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
-                else
-                    graph.moveCells(root, spacing*zoom* (att.getX_atual()+5+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
-                
-                currentTemporalNodeOrder.put(att.getId_original(),att.getY_atual());
-            }
-            if(att.isNode() ){
-                graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
-                int i=1;
-                for(int at : orderLexic)
-                {
-                    if(at == att.getId_original())
-                       break;
-                    i++;
+                    if (s1.toUpperCase().equals(s1) && s2.toLowerCase().equals(s2)) {
+                        return -1;
+                    }
+
+                    return s1.compareTo(s2);
                 }
-                
-                att.setY_atual(i);
-                graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX -2.5, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35);
-            }
-            if(att.isEdge())
+            });
+            
+            
+            for(String lexic : orderLexic)
             {
-                graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
-                
-                
-                int y_inicial ;
-                
-                int i=2;
-                for(int at : orderLexic)
+                InlineNodeAttribute attLexic = null;
+                for(InlineNodeAttribute att : listAttNodes)
                 {
-                    if(at == att.getOrigin())
-                       break;
-                    i++;
+                    if((att.getId_original()+"").equals(lexic))
+                    {
+                        attLexic = att;
+                        break;
+                    }
+                    else if(att.getLabel().equals(lexic))
+                    {
+                        attLexic = att;
+                        break;
+                    }    
                 }
-                
-                int iD=2;
-                for(int at : orderLexic)
+                currentNodesIdOrder.add(attLexic);
+            }
+        }
+        else
+        {
+            ArrayList<Integer> orderLexic = new ArrayList();
+        
+            orderLexic.addAll(lineNodes);
+            Collections.sort(orderLexic);
+            
+            for(Integer lexic : orderLexic)
+            {
+                InlineNodeAttribute attLexic = null;
+                for(InlineNodeAttribute att : listAttNodes)
                 {
-                    if(at == att.getDestiny())
-                       break;
-                    iD++;
+                    if(att.getId_original() == lexic)
+                    {
+                        attLexic = att;
+                        break;
+                    }
                 }
-                
-                String styleShapeInline = cell.getStyle();
-                
-                if(i < iD)
-                {
-                    y_inicial = i;
-                    styleShapeInline = styleShapeInline.replace(mxConstants.DIRECTION_SOUTH, mxConstants.DIRECTION_NORTH);
-                    att.setIsNorth(true);
-                }
-                else
-                {
-                    y_inicial = iD;
-                    styleShapeInline = styleShapeInline.replace(mxConstants.DIRECTION_NORTH, mxConstants.DIRECTION_SOUTH);
-                    
-                    att.setIsNorth(false);
-                }
-                
-                cell.setStyle(styleShapeInline);
-                
-                att.setY_atual(y_inicial);
-                
-                mxGeometry g = (mxGeometry) cell.getGeometry().clone();
-                att.setHeightEdge_atual(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20)));
-                g.setHeight(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20))); 
-                cell.setGeometry(g);
-                graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX  - moveEdgeSizeX, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 24);
+                currentNodesIdOrder.add(attLexic);
             }
         }
         
-        graph.getModel().endUpdate();
-        graph.refresh();
-        graph.repaint();
         
+        
+        HashMap<Integer,List<InlineNodeAttribute>> sequenciaDeEntrada = new HashMap();
+                        
+        sequenciaDeEntrada.put(0, currentNodesIdOrder);
+        
+        visualizaNos(sequenciaDeEntrada);
+        
+        
+        graph.getModel().endUpdate();
     }
     
     public void orderDegree(){
+        
         graph.getModel().beginUpdate();
         
-        Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
-        for (Object root1 : roots) {
-            Object[] root = {root1};
-            mxCell cell = (mxCell) root1;
-            InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
-            
-            //Move cells to origin point
-            if(att.isLineNode()){
-                graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
-                int i=1;
-                for(InlineNodeAttribute attNode : listAttNodes)
-                {
-                    if(attNode.getId_original() == att.getId_original())
-                       break;
-                    i++;
-                }
-                
-                att.setY_atual(i);
-                if(att.isLeft())
-                    graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
-                else
-                    graph.moveCells(root, spacing*zoom* (att.getX_atual()+5+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
-                
-                currentTemporalNodeOrder.put(att.getId_original(),att.getY_atual());
-            }
-            if(att.isNode() ){
-                graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
-                int i=1;
-                for(InlineNodeAttribute attNode : listAttNodes)
-                {
-                    if(attNode.getId_original() == att.getId_original())
-                       break;
-                    i++;
-                }
-                
-                att.setY_atual(i);
-                graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX -2.5, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35);
-            }
-            if(att.isEdge())
-            {
-                graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
-                
-                
-                int y_inicial ;
-                
-                int i=2;
-                for(InlineNodeAttribute attNode : listAttNodes)
-                {
-                    if(attNode.getId_original() == att.getOrigin())
-                       break;
-                    i++;
-                }
-                
-                int iD=2;
-                for(InlineNodeAttribute attNode : listAttNodes)
-                {
-                    if(attNode.getId_original() == att.getDestiny())
-                       break;
-                    iD++;
-                }
-                
-                String styleShapeInline = cell.getStyle();
-                
-                if(i < iD)
-                {
-                    y_inicial = i;
-                    styleShapeInline = styleShapeInline.replace(mxConstants.DIRECTION_SOUTH, mxConstants.DIRECTION_NORTH);
-                    att.setIsNorth(true);
-                }
-                else
-                {
-                    y_inicial = iD;
-                    styleShapeInline = styleShapeInline.replace(mxConstants.DIRECTION_NORTH, mxConstants.DIRECTION_SOUTH);
-                    
-                    att.setIsNorth(false);
-                }
-                
-                cell.setStyle(styleShapeInline);
-                
-                att.setY_atual(y_inicial);
-                
-                mxGeometry g = (mxGeometry) cell.getGeometry().clone();
-                att.setHeightEdge_atual(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20)));
-                g.setHeight(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20))); 
-                cell.setGeometry(g);
-                graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX  - moveEdgeSizeX, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 24);
-            }
-        }
+        List<InlineNodeAttribute> currentNodesIdOrder = new ArrayList();
+        currentNodesIdOrder.addAll(listAttNodes);
+        Collections.sort(currentNodesIdOrder);
         
-        graph.getModel().endUpdate();
-        graph.refresh();
-        graph.repaint();
+        HashMap<Integer,List<InlineNodeAttribute>> sequenciaDeEntrada = new HashMap();
+                        
+        sequenciaDeEntrada.put(0, currentNodesIdOrder);
+        
+        visualizaNos(sequenciaDeEntrada);
+        
+        
+        
     }
      
     
@@ -1865,7 +1963,7 @@ public class NetLayoutInlineNew extends NetLayout {
                 att.setHeightEdge_atual(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20)));
                 g.setHeight(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20))); 
                 cell.setGeometry(g);
-                graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX  - moveEdgeSizeX, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 24);
+                graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX - moveEdgeSizeX,  (zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35)+15*spaceBetweenLines );
             }
         }
         
@@ -1885,7 +1983,7 @@ public class NetLayoutInlineNew extends NetLayout {
             boolean oNoEhOutlier = true;
             for(int j = 0; j < comunidades.keySet().size(); j++)
             {
-                if(comunidades.get(j).contains(listAttNodesWithoutDuplicates.get(i)))
+                if(comunidades.get(j) != null && comunidades.get(j).contains(listAttNodesWithoutDuplicates.get(i)))
                 {
                     oNoEhOutlier = false;
                     break;
@@ -1899,13 +1997,17 @@ public class NetLayoutInlineNew extends NetLayout {
         return outliers.substring(0,outliers.length() - 2);
     }
     
+    public boolean calculate_with_weight = false;
+    public boolean weight_external_file = false;
+    public HashMap<String,Integer> edgeWeight_external_file = new HashMap();
+    
     @Deprecated
     public void orderInfoMap(boolean ordered, boolean RN){
 
         //CALCULO DO ALGORITMO DE COMUNIDADE
         
       
-        comunidades = new InfoMap().execute(listAllEdges, listAttNodes);
+        comunidades = new InfoMap().execute(listAllEdges, listAttNodes,calculate_with_weight,weight_external_file,edgeWeight_external_file);
             
         System.out.println("Ouliers =   " + obtemOutLiers(comunidades,listAttNodes));
         
@@ -2180,7 +2282,7 @@ public class NetLayoutInlineNew extends NetLayout {
                 att.setHeightEdge_atual(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20)));
                 g.setHeight(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20))); 
                 cell.setGeometry(g);
-                graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX  - moveEdgeSizeX, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 24);
+                graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX - moveEdgeSizeX,  (zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35)+15*spaceBetweenLines );
             }
         }
         
@@ -2197,6 +2299,7 @@ public class NetLayoutInlineNew extends NetLayout {
 
             JFileChooser openDialog = new JFileChooser();
             String filename = "";
+            filename = f.getPathDataset();
 
             openDialog.setMultiSelectionEnabled(false);
             openDialog.setDialogTitle("Open file");
@@ -2959,12 +3062,12 @@ public class NetLayoutInlineNew extends NetLayout {
         //STEP 1: DETECTAR COMUNIDADES
         if(metodoDeteccao.equals("Original Louvain") || metodoDeteccao.equals("Multilevel Louvain") || metodoDeteccao.equals("SLM"))
         {
-            sequenciaROC = new SLM_Louvain().execute(nos, arestas, metodoDeteccao);
+            sequenciaROC = new SLM_Louvain().execute(nos, arestas, metodoDeteccao,calculate_with_weight,weight_external_file,edgeWeight_external_file);
             //new Statistic().calculaFMeasure(comunidades, "Louvain");
         }
         else if(metodoDeteccao.equals("Infomap"))
         {
-            sequenciaROC = new InfoMap().execute(arestas, nos);
+            sequenciaROC = new InfoMap().execute(arestas, nos,calculate_with_weight,weight_external_file,edgeWeight_external_file);
            // new MainForm().imprimeComunidadesArquivo(sequenciaROC, "Infomap");
             //new Statistic().calculaFMeasure(comunidades, "Louvain");
         }
@@ -3012,20 +3115,17 @@ public class NetLayoutInlineNew extends NetLayout {
     }
     
 
+    private int positionLineGraph = 0;
     
     public void visualizaNos(HashMap<Integer, List<InlineNodeAttribute>> sequenciaDeEntrada)
     {
         //Recebe sequencia de nós de entrada (tanto faz como essa sequencia surgiu (passo 1, 2 ou 3) e plota ela no layout temporal).
         ArrayList<Integer> nosSequenciaVisualizacao = getPositionVisualizationById(sequenciaDeEntrada);
         
-        int positionLineGraph = 0;
-        //Pega a posicao do ultimo no da ordenação;
-        positionLineGraph += nosSequenciaVisualizacao.size();
+         
         //Soma a qtdd de comunidades detectada a posicao do ultimo nó
         if(blankSpaceCommunities)
-            positionLineGraph += sequenciaDeEntrada.size();
-        else
-             positionLineGraph -= sequenciaDeEntrada.size();
+            positionLineGraph = sequenciaDeEntrada.size();
         int i;
         //PARTE DO ALGORITMO DE VISUALIZACAO E PLOTAGEM DOS NÓS
         graph.getModel().beginUpdate();
@@ -3034,7 +3134,7 @@ public class NetLayoutInlineNew extends NetLayout {
             Object[] root = {root1};
             mxCell cell = (mxCell) root1;
             InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
-            if(att.isGraphLine())
+            /*if(att.isGraphLine())
             {
                 //Move cells to origin point
                 double x = cell.getGeometry().getX();
@@ -3044,6 +3144,21 @@ public class NetLayoutInlineNew extends NetLayout {
                 
                 graph.moveCells(root, x, att.getY_atual());
                 
+            }*/
+            if(att.isGraphLine())
+            {
+                //Move cells to origin point
+                double x = cell.getGeometry().getX();
+                graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
+
+                //positionLineGraph
+                int dif = 15*( deslocamento +lineNodes.size()+(positionLineGraph) );
+                
+                att.setY_atual(zoom* ((lineNodes.size()+(positionLineGraph) )* deslocamento ) + 35 + att.getY_original() - dif);
+                
+                
+                graph.moveCells(root, x, att.getY_atual());
+
             }
             else if(att.isLineNode())
             {
@@ -3115,14 +3230,14 @@ public class NetLayoutInlineNew extends NetLayout {
                 
                 cell.setStyle(styleShapeInline);
                 
-                //i/2 because listAttNodes has duplicate values
-                att.setY_atual(y_inicial);
+                att.setY_atual(y_inicial-2);
                 
                 mxGeometry g = (mxGeometry) cell.getGeometry().clone();
-                att.setHeightEdge_atual(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20)));
-                g.setHeight(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20))); 
+                att.setHeightEdge((Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20))));
+                att.setHeightEdge_atual((Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20)))*spaceBetweenLines);
+                g.setHeight((Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20)))*spaceBetweenLines); 
                 cell.setGeometry(g);
-                graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX  - moveEdgeSizeX, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 24);
+                graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX - moveEdgeSizeX,  (zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35)+15*spaceBetweenLines );
             }
         }
         
@@ -3137,6 +3252,8 @@ public class NetLayoutInlineNew extends NetLayout {
         nosSequenciaVisualizacao.add(-1);
         for(int i = 0; i < sequenciaDeEntrada.size(); i++)
         {
+			if(sequenciaDeEntrada.get(i) == null) //jean 09-11 merge
+                continue;
             for(int j=0; j < sequenciaDeEntrada.get(i).size(); j++)
             {
                 nosSequenciaVisualizacao.add(sequenciaDeEntrada.get(i).get(j).getId_original());
@@ -3171,6 +3288,8 @@ public class NetLayoutInlineNew extends NetLayout {
             int comunityOrigin = 0, comunityDestiny = 0;
 
             for(int i = 0; i < comunidades.size() && !finished; i++){
+				if(comunidades.get(i) == null) //jean 09-11 merge
+                    continue;
                 for(int j = 0; j < comunidades.get(i).size(); j++){
                     if(findOrigin && findDestiny)
                     {
@@ -3204,7 +3323,7 @@ public class NetLayoutInlineNew extends NetLayout {
 
         //CALCULO DO ALGORITMO DE COMUNIDADE
         
-        comunidades = new SLM_Louvain().execute(listAttNodes, listAllEdges, metodo);
+        comunidades = new SLM_Louvain().execute(listAttNodes, listAllEdges, metodo,calculate_with_weight,weight_external_file,edgeWeight_external_file);
             
         System.out.println("Ouliers =   " + obtemOutLiers(comunidades,listAttNodes));
         //new Statistic().calculaFMeasure(comunidades, "Louvain");
@@ -3477,7 +3596,7 @@ public class NetLayoutInlineNew extends NetLayout {
                 att.setHeightEdge_atual(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20)));
                 g.setHeight(Math.abs((zoom* (iD+deslocamento) + 20) - (zoom* (i+deslocamento) + 20))); 
                 cell.setGeometry(g);
-                graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX  - moveEdgeSizeX, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 24);
+                graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX - moveEdgeSizeX,  (zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35)+15*spaceBetweenLines );
             }
         }
         
@@ -3491,6 +3610,27 @@ public class NetLayoutInlineNew extends NetLayout {
 
         graph.getModel().beginUpdate();
         
+        List<InlineNodeAttribute> currentNodesIdOrder = new ArrayList();
+        currentNodesIdOrder.addAll(listAttNodes);
+        
+        HashMap<Integer,List<InlineNodeAttribute>> sequenciaDeEntrada = new HashMap();
+                        
+        sequenciaDeEntrada.put(0, currentNodesIdOrder);
+        
+        visualizaNos(sequenciaDeEntrada);
+        
+    }
+    
+    public int xSpace = 1, ySpace = 1;
+
+    public void spaceTemporal(){
+
+        graph.getModel().beginUpdate();
+        
+        spaceBetweenLines = xSpace;
+        spacing = ySpace;
+        
+        
         Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
         for (Object root1 : roots) {
             Object[] root = {root1};
@@ -3500,33 +3640,41 @@ public class NetLayoutInlineNew extends NetLayout {
             if(att.isLineNode())
             {
                 graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
-                att.setX_atual(att.getX_original());
-                att.setY_atual(att.getY_original());
+
                 if(att.isLeft())
                     graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
                 else
                     graph.moveCells(root, spacing*zoom* (att.getX_atual()+5+deslocamento)+(shiftX/3), zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35 );
-                
+                                
                 currentTemporalNodeOrder.put(att.getId_original(),att.getY_atual());
             }
             else if(att.isNode())
             {
                 graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
-                att.setX_atual(att.getX_original());
-                att.setY_atual(att.getY_original());
-                
-                
+
                 graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX -2.5 , zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35);
+            }
+            if(att.isGraphLine())
+            {
+                //Move cells to origin point
+                int x = spacing*zoom* (att.getTime()+deslocamento)+15;
+                graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
+                
+                //positionLineGraph
+                int dif = 15*( deslocamento +lineNodes.size()+(positionLineGraph) );
+                
+                att.setY_atual(zoom* ((lineNodes.size()+(positionLineGraph) )* deslocamento * spaceBetweenLines) + 35 + att.getY_original() - dif);
+                
+                graph.moveCells(root, x, att.getY_atual());
+                
             }
             else if(att.isEdge())
             {
                 graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
-                att.setX_atual(att.getX_original());
-                att.setY_atual(att.getY_original()+2);
 
                 mxGeometry g = (mxGeometry) cell.getGeometry().clone();
-                att.setHeightEdge_atual(att.getOriginalHeightEdge());
-                g.setHeight(att.getOriginalHeightEdge()); 
+                att.setHeightEdge_atual(att.getOriginalHeightEdge()*spaceBetweenLines);
+                g.setHeight(att.getOriginalHeightEdge()*spaceBetweenLines); 
                 cell.setGeometry(g);
                 
                 //Inverter a cor se preciso
@@ -3563,8 +3711,22 @@ public class NetLayoutInlineNew extends NetLayout {
                 
                 graph.setCellStyle(styleGradientEdge, root);
                 
-                graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX - moveEdgeSizeX, zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 24);
+                // spacing*zoom* (tempo+deslocamento)+shiftX +0
+                //, (zoom* (y_inicial+1+deslocamento) + 20) +4
+                //, sizeEdgeTemporalInline
+                //, Math.abs((zoom* (indexTarget+1+deslocamento) + 20) - (zoom* (indexSource+1+deslocamento) + 20))
+
                 
+                graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX - moveEdgeSizeX,  (zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35)+15*spaceBetweenLines );
+                
+            }
+            else if(att.isTimeNode())
+            {
+                graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
+
+                graph.moveCells(root, spacing * zoom* (att.getX_atual() + deslocamento)+ shiftX + 5 ,  zoom* (deslocamento ) +15  );
+                
+                //graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX -2.5 , att.getY_original());
             }
         }
         
@@ -3572,12 +3734,62 @@ public class NetLayoutInlineNew extends NetLayout {
         graph.refresh();
         graph.repaint();
     }
-     
+    
+    public static mxGraphSelectionModel selectionCells = null;
+    
+    public void orderSelectedNodes() {
+        
+        List<InlineNodeAttribute> currentNodesIdOrderBackup = new ArrayList();
+        currentNodesIdOrderBackup.addAll(listAttNodes);
+        List<InlineNodeAttribute> currentNodesIdOrder = new ArrayList();
+
+        HashMap<Integer,List<InlineNodeAttribute>> sequenciaDeEntrada = new HashMap();
+        
+        if(selectionCells != null)
+        {
+        
+            ArrayList<Integer> idsSelectedCells = new ArrayList();
+            
+            for(Object selectCell : selectionCells.getCells())
+            {
+                mxCell selectC = (mxCell) selectCell;
+                int idN = Integer.parseInt(selectC.getId());
+                
+                InlineNodeAttribute nodeCerto = null;
+                
+                for(InlineNodeAttribute attNode: listAttNodes)
+                {
+                    if(attNode.getId_original() == idN)
+                    {
+                        nodeCerto = attNode;
+                        break;
+                    }
+                    
+                }
+                currentNodesIdOrderBackup.remove(nodeCerto);
+                currentNodesIdOrder.add(nodeCerto);
+                
+            }
+            
+            currentNodesIdOrder.addAll(currentNodesIdOrderBackup);
+            
+        }
+        else
+        {
+            currentNodesIdOrder.addAll(listAttNodes);
+        }
+       
+        sequenciaDeEntrada.put(0, currentNodesIdOrder);
+        
+        visualizaNos(sequenciaDeEntrada);
+    }
+    
     
     int spacing, zoom;
    
-    public void NetLayoutInlineNew(ArrayList<ArrayList> matrizData, int spacing, int zoom, boolean veioDoStream) {
+    public void NetLayoutInlineNew(ArrayList<ArrayList> matrizData, boolean veioDoStream, MainForm f) {
         
+        this.f = f;
         setColor("Original");
         colorInline = "Original";
         colorEdgeInline = "Original";
@@ -3599,11 +3811,13 @@ public class NetLayoutInlineNew extends NetLayout {
             
             //file = new BufferedReader(new FileReader(new File(filename)));
 
-            int id = 0;
-            matrizDataInline = new ArrayList<>();
-            ArrayList<Integer> coluna = new ArrayList<>();
-            deslocamento = 1;  
-            shiftX = 50;
+        int id = 0;
+        matrizDataInline = new ArrayList<>();
+        ArrayList<Integer> coluna = new ArrayList<>();
+        deslocamento = 1;  
+        shiftX = 50;
+        zoom = 15;
+        spacing = 1;
             /*
             while((line = file.readLine()) != null) {
                 tokens = line.split(" ");
@@ -3614,65 +3828,65 @@ public class NetLayoutInlineNew extends NetLayout {
                 coluna = new ArrayList<>();
                 id++;
             }*/
-            
-            matrizDataInline = matrizData;
-            
-            changePositionNodes(spacing,zoom, veioDoStream);
-            
-            
-            String styleNode = mxConstants.STYLE_MOVABLE+"=0;";
-            styleNode += mxConstants.STYLE_EDITABLE+"=0;";
-            styleNode += mxConstants.STYLE_RESIZABLE+"=0;";
-            styleNode += mxConstants.STYLE_NOLABEL+"=0;";
-            styleNode += mxConstants.STYLE_VERTICAL_LABEL_POSITION+"="+mxConstants.ALIGN_CENTER+";";
-            styleNode += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_RECTANGLE+";";
-           
-            String styleNodeLeft = mxConstants.STYLE_MOVABLE+"=0;";
-            styleNodeLeft += mxConstants.STYLE_EDITABLE+"=0;";
-            styleNodeLeft += mxConstants.STYLE_RESIZABLE+"=0;";
-            styleNodeLeft += mxConstants.STYLE_NOLABEL+"=0;";
-            styleNodeLeft += mxConstants.STYLE_FONTCOLOR+"="+Color.BLACK+";";
-            styleNodeLeft += mxConstants.STYLE_VERTICAL_LABEL_POSITION+"="+mxConstants.ALIGN_LEFT+";";
-            styleNodeLeft += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_RECTANGLE+";";
-            
-            String styleNodeRight = mxConstants.STYLE_MOVABLE+"=0;";
-            styleNodeRight += mxConstants.STYLE_EDITABLE+"=0;";
-            styleNodeRight += mxConstants.STYLE_RESIZABLE+"=0;";
-            styleNodeRight += mxConstants.STYLE_NOLABEL+"=0;";
-            styleNodeRight += mxConstants.STYLE_FONTCOLOR+"="+Color.BLACK+";";
-            styleNodeRight += mxConstants.STYLE_VERTICAL_LABEL_POSITION+"="+mxConstants.ALIGN_RIGHT+";";
-            styleNodeRight += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_RECTANGLE+";";
-           
-            mxGraph graphScalar = new mxGraph();
-            graphScalar.insertVertex(null, "color 0", "", 3 , 3, 30 , 20, styleNodeLeft);
-            graphScalar.insertVertex(null, "color 0.1", "", 33 , 3, 30 , 20, styleNode);
-            graphScalar.insertVertex(null, "color 0.2", "", 63 , 3, 30 , 20, styleNode);
-            graphScalar.insertVertex(null, "color 0.3", "", 93 , 3, 30 , 20, styleNode);
-            graphScalar.insertVertex(null, "color 0.4", "", 123 , 3, 30 , 20, styleNode);
-            graphScalar.insertVertex(null, "color 0.5", "", 153 , 3, 30 , 20, styleNode);
-            graphScalar.insertVertex(null, "color 0.6", "", 183 , 3, 30 , 20, styleNode);
-            graphScalar.insertVertex(null, "color 0.7", "", 213 , 3, 30 , 20, styleNode);
-            graphScalar.insertVertex(null, "color 0.8", "", 243 , 3, 30 , 20, styleNode);
-            graphScalar.insertVertex(null, "color 0.9", "", 273 , 3, 30 , 20, styleNode);
-            graphScalar.insertVertex(null, "color 1", "", 303 , 3, 30 , 20, styleNodeRight);
-            
-            graphComponentScalarInline = new mxGraphComponent(graphScalar);
-            
-            mxGraph graphScalar2 = new mxGraph();
-            graphScalar2.insertVertex(null, "color 0", "", 3 , 3, 30 , 20, styleNodeLeft);
-            graphScalar2.insertVertex(null, "color 0.1", "", 33 , 3, 30 , 20, styleNode);
-            graphScalar2.insertVertex(null, "color 0.2", "", 63 , 3, 30 , 20, styleNode);
-            graphScalar2.insertVertex(null, "color 0.3", "", 93 , 3, 30 , 20, styleNode);
-            graphScalar2.insertVertex(null, "color 0.4", "", 123 , 3, 30 , 20, styleNode);
-            graphScalar2.insertVertex(null, "color 0.5", "", 153 , 3, 30 , 20, styleNode);
-            graphScalar2.insertVertex(null, "color 0.6", "", 183 , 3, 30 , 20, styleNode);
-            graphScalar2.insertVertex(null, "color 0.7", "", 213 , 3, 30 , 20, styleNode);
-            graphScalar2.insertVertex(null, "color 0.8", "", 243 , 3, 30 , 20, styleNode);
-            graphScalar2.insertVertex(null, "color 0.9", "", 273 , 3, 30 , 20, styleNode);
-            graphScalar2.insertVertex(null, "color 1", "", 303 , 3, 30 , 20, styleNodeRight);
-            
-            graphComponentScalarEdgeInline = new mxGraphComponent(graphScalar2);
-            
+
+        matrizDataInline = matrizData;
+
+        changePositionNodes(spacing,zoom, veioDoStream);
+
+
+        String styleNode = mxConstants.STYLE_MOVABLE+"=0;";
+        styleNode += mxConstants.STYLE_EDITABLE+"=0;";
+        styleNode += mxConstants.STYLE_RESIZABLE+"=0;";
+        styleNode += mxConstants.STYLE_NOLABEL+"=0;";
+        styleNode += mxConstants.STYLE_VERTICAL_LABEL_POSITION+"="+mxConstants.ALIGN_CENTER+";";
+        styleNode += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_RECTANGLE+";";
+
+        String styleNodeLeft = mxConstants.STYLE_MOVABLE+"=0;";
+        styleNodeLeft += mxConstants.STYLE_EDITABLE+"=0;";
+        styleNodeLeft += mxConstants.STYLE_RESIZABLE+"=0;";
+        styleNodeLeft += mxConstants.STYLE_NOLABEL+"=0;";
+        styleNodeLeft += mxConstants.STYLE_FONTCOLOR+"="+Color.BLACK+";";
+        styleNodeLeft += mxConstants.STYLE_VERTICAL_LABEL_POSITION+"="+mxConstants.ALIGN_LEFT+";";
+        styleNodeLeft += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_RECTANGLE+";";
+
+        String styleNodeRight = mxConstants.STYLE_MOVABLE+"=0;";
+        styleNodeRight += mxConstants.STYLE_EDITABLE+"=0;";
+        styleNodeRight += mxConstants.STYLE_RESIZABLE+"=0;";
+        styleNodeRight += mxConstants.STYLE_NOLABEL+"=0;";
+        styleNodeRight += mxConstants.STYLE_FONTCOLOR+"="+Color.BLACK+";";
+        styleNodeRight += mxConstants.STYLE_VERTICAL_LABEL_POSITION+"="+mxConstants.ALIGN_RIGHT+";";
+        styleNodeRight += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_RECTANGLE+";";
+
+        mxGraph graphScalar = new mxGraph();
+        graphScalar.insertVertex(null, "color 0", "", 3 , 3, 30 , 20, styleNodeLeft);
+        graphScalar.insertVertex(null, "color 0.1", "", 33 , 3, 30 , 20, styleNode);
+        graphScalar.insertVertex(null, "color 0.2", "", 63 , 3, 30 , 20, styleNode);
+        graphScalar.insertVertex(null, "color 0.3", "", 93 , 3, 30 , 20, styleNode);
+        graphScalar.insertVertex(null, "color 0.4", "", 123 , 3, 30 , 20, styleNode);
+        graphScalar.insertVertex(null, "color 0.5", "", 153 , 3, 30 , 20, styleNode);
+        graphScalar.insertVertex(null, "color 0.6", "", 183 , 3, 30 , 20, styleNode);
+        graphScalar.insertVertex(null, "color 0.7", "", 213 , 3, 30 , 20, styleNode);
+        graphScalar.insertVertex(null, "color 0.8", "", 243 , 3, 30 , 20, styleNode);
+        graphScalar.insertVertex(null, "color 0.9", "", 273 , 3, 30 , 20, styleNode);
+        graphScalar.insertVertex(null, "color 1", "", 303 , 3, 30 , 20, styleNodeRight);
+
+        graphComponentScalarInline = new mxGraphComponent(graphScalar);
+
+        mxGraph graphScalar2 = new mxGraph();
+        graphScalar2.insertVertex(null, "color 0", "", 3 , 3, 30 , 20, styleNodeLeft);
+        graphScalar2.insertVertex(null, "color 0.1", "", 33 , 3, 30 , 20, styleNode);
+        graphScalar2.insertVertex(null, "color 0.2", "", 63 , 3, 30 , 20, styleNode);
+        graphScalar2.insertVertex(null, "color 0.3", "", 93 , 3, 30 , 20, styleNode);
+        graphScalar2.insertVertex(null, "color 0.4", "", 123 , 3, 30 , 20, styleNode);
+        graphScalar2.insertVertex(null, "color 0.5", "", 153 , 3, 30 , 20, styleNode);
+        graphScalar2.insertVertex(null, "color 0.6", "", 183 , 3, 30 , 20, styleNode);
+        graphScalar2.insertVertex(null, "color 0.7", "", 213 , 3, 30 , 20, styleNode);
+        graphScalar2.insertVertex(null, "color 0.8", "", 243 , 3, 30 , 20, styleNode);
+        graphScalar2.insertVertex(null, "color 0.9", "", 273 , 3, 30 , 20, styleNode);
+        graphScalar2.insertVertex(null, "color 1", "", 303 , 3, 30 , 20, styleNodeRight);
+
+        graphComponentScalarEdgeInline = new mxGraphComponent(graphScalar2);
+
             
             
            /* 
@@ -3683,6 +3897,8 @@ public class NetLayoutInlineNew extends NetLayout {
     
     
     private int lastTime;
+    
+    ArrayList<Object> listGraphLineElements = new ArrayList();
     
     public void NetLayoutLine(){
 
@@ -3712,37 +3928,48 @@ public class NetLayoutInlineNew extends NetLayout {
         int x = spacing*zoom* (0+deslocamento)+15;
         int y = zoom* (weightTopLine+1+deslocamento+shiftYAllInline);
         
-        InlineNodeAttribute att = new InlineNodeAttribute(tempo,0,x,y,"",false,false,false);
+        InlineNodeAttribute att = new InlineNodeAttribute(0,0,x,y,"",false,false,false); //jean merge conferir 09-11-20
         att.setIsGraphLine(true);
         //Add Horizontal Line
         Object barraH1 = graph.insertVertex(null, "barra horizontal 1", att,x,y, 1 , 1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
         
+        listGraphLineElements.add(barraH1);
+        
         x = spacing*zoom* (tempo+deslocamento)+shiftX+30;
         y = zoom* (weightTopLine+1+deslocamento+shiftYAllInline);
         
-        att = new InlineNodeAttribute(tempo,0,x,y,"",false,false,false);
+        att = new InlineNodeAttribute(0,0,x,y,"",false,false,false);
         att.setIsGraphLine(true);
         Object barraH2 = graph.insertVertex(null, "barra horizontal 2", att,x,y, 1 , 1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
         
-        graph.insertEdge(null, null,"edge horizontal 3", barraH1, barraH2, styleShapeEdgeLines2);
+        listGraphLineElements.add(barraH2);
+        
+        Object edgeHorizontal3 = graph.insertEdge(null, null,"edge horizontal 3", barraH1, barraH2, styleShapeEdgeLines2);
+        
+        listGraphLineElements.add(edgeHorizontal3);
         
         //Add Vertical Line
         x = spacing*zoom* (0+deslocamento)+15;
         y = zoom* (weightTopLine+1+deslocamento+shiftYAllInline);
         
-        att = new InlineNodeAttribute(tempo,0,x,y,"",false,false,false);
+        att = new InlineNodeAttribute(0,0,x,y,"",false,false,false);
         att.setIsGraphLine(true);
         Object barraV1 = graph.insertVertex(null, "barra vertical 1", att,x,y, 1 , 1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
+        
+        listGraphLineElements.add(barraV1);
         
         x = spacing*zoom* (0+deslocamento)+15;
         y =  zoom* (weightBottomLine+deslocamento+shiftYAllInline);
         
-        att = new InlineNodeAttribute(tempo,0,x,y,"",false,false,false);
+        att = new InlineNodeAttribute(0,0,x,y,"",false,false,false);
         att.setIsGraphLine(true);
         
         Object barraV2 = graph.insertVertex(null, "barra vertical 2", att,x,y, 1 , 1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
-        graph.insertEdge(null, null,"edge vertical 3", barraV1, barraV2,styleShapeEdgeLines2);
+        Object edgeVertical3 = graph.insertEdge(null, null,"edge vertical 3", barraV1, barraV2,styleShapeEdgeLines2);
 
+        listGraphLineElements.add(barraV2);
+        listGraphLineElements.add(edgeVertical3);
+        
         mxCell cellAnt=null, cellAtual=null;
         
         int maiorValorTempo = matrizGraphLine[0], menorValorTempo = matrizGraphLine[0];
@@ -3758,18 +3985,20 @@ public class NetLayoutInlineNew extends NetLayout {
         x = spacing*zoom* (0+deslocamento)+10;
         y =  zoom* (weightTopLine+deslocamento+shiftYAllInline);
 
-        att = new InlineNodeAttribute(menorValorTempo,menorValorTempo,x,y,""+menorValorTempo,false,false,false);
+        att = new InlineNodeAttribute(0,menorValorTempo,x,y,""+menorValorTempo,false,false,false);
         att.setIsGraphLine(true);
         mxCell cell = (mxCell) graph.insertVertex(null, null, att,x,y, 1,1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
 
+        listGraphLineElements.add(cell);
         
         x = spacing*zoom* (0+deslocamento)+10;
         y = zoom* (weightBottomLine+1+deslocamento+shiftYAllInline);
         
-        att = new InlineNodeAttribute(maiorValorTempo/2,maiorValorTempo/2,x,y,""+maiorValorTempo/2,false,false,false);
+        att = new InlineNodeAttribute(0,maiorValorTempo/2,x,y,""+maiorValorTempo/2,false,false,false);
         att.setIsGraphLine(true);
         cell = (mxCell) graph.insertVertex(null, null, att,x,y, 1,1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
-
+        
+        listGraphLineElements.add(cell);
         
         //Insert Horizontal Times
         for(int j=0;j<=tempo;j++)
@@ -3777,7 +4006,7 @@ public class NetLayoutInlineNew extends NetLayout {
             
             int valorConexaoNoPorTempo = matrizGraphLine[j];
             
-            float insize = (valorConexaoNoPorTempo * (weightTopLine - weightBottomLine) / ((maiorValorTempo - menorValorTempo)+1)) + weightBottomLine;
+            float insize = (valorConexaoNoPorTempo * (weightTopLine - weightBottomLine) / ((maiorValorTempo))) + weightBottomLine;
 
             float f = Integer.MAX_VALUE;
             int ia = (int) f;
@@ -3788,6 +4017,153 @@ public class NetLayoutInlineNew extends NetLayout {
             insize = Math.abs(insize - weightTopLine);
             
             if(insize == 20 && valorConexaoNoPorTempo != 0)
+            {
+                insize -= 0.5;
+            }
+            
+            insize = (float) (insize + 0.8);
+            
+            
+            x = spacing*zoom* (j+deslocamento)+shiftX;
+            y = (int) (zoom* (insize+deslocamento+shiftYAllInline));
+            
+            att = new InlineNodeAttribute(j,0,x,y,"",false,false,false);
+            att.setIsGraphLine(true);
+            att.setIsGraphLineNodes(true);
+            
+            //Random generator = new Random();
+            //int i = generator.nextInt(9);
+
+            if(j == 0)
+            {
+                cellAnt = (mxCell) graph.insertVertex(null, null, att,x,y, 3,3,mxConstants.STYLE_FONTSIZE+"=15;"+mxConstants.STYLE_HORIZONTAL+"=0;" + mxConstants.STYLE_NOLABEL+"=0;" + mxConstants.STYLE_ALIGN+"="+mxConstants.ALIGN_LEFT+";"+mxConstants.STYLE_FILLCOLOR+"=#000000;"+mxConstants.STYLE_STROKECOLOR+"=#000000;");
+                
+                listGraphLineElements.add(cellAnt);
+        
+            }
+
+            x =  spacing*zoom* (j+deslocamento)+shiftX;
+            y = (int) ( zoom* (insize+deslocamento+shiftYAllInline));
+            
+            att = new InlineNodeAttribute(j,0,x,y,"",false,false,false);
+            att.setIsGraphLine(true);
+            att.setIsGraphLineNodes(true);
+            cellAtual = (mxCell) graph.insertVertex(null, null, att,x,y,3,3, mxConstants.STYLE_FONTSIZE+"=15;"+mxConstants.STYLE_HORIZONTAL+"=0;" + mxConstants.STYLE_NOLABEL+"=0;" + mxConstants.STYLE_ALIGN+"="+mxConstants.ALIGN_LEFT+";"+ mxConstants.STYLE_FILLCOLOR+"=#000000;"+mxConstants.STYLE_STROKECOLOR+"=#000000;");
+            
+            listGraphLineElements.add(cellAtual);
+        
+            att = new InlineNodeAttribute(j,0,x,y,"",false,false,false);
+            att.setIsGraphLine(true);
+            Object edgeH = graph.insertEdge(null, null,"edge hor 11", cellAnt, cellAtual,styleShapeEdgeLines+";"+mxConstants.STYLE_ENDARROW+"=0;");
+            cellAnt = cellAtual;
+
+            listGraphLineElements.add(edgeH);
+        
+            x = spacing*zoom* (j+deslocamento)+shiftX+5;
+            y =  zoom* (weightTopLine+2+deslocamento+shiftYAllInline);
+            
+            att = new InlineNodeAttribute(j,j,x,y,""+j,false,false,false);
+            att.setIsGraphLine(true);
+            cell = (mxCell) graph.insertVertex(null, null, att,x,y,1,1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
+
+            listGraphLineElements.add(cell);
+        
+            //att = new InlineNodeAttribute(j,j,j,1,"node "+j,false,false,true);
+
+        }
+        graph.getModel().endUpdate();
+        //graphComponentLine = new mxGraphComponent(graphScalar);
+
+    }
+    
+//Não é papel do método validar se o array possui valores fora da escala [menorValorPossivel, maiorValorPossivel]
+    public void plotaLineGraphEstaticoGenerico(ArrayList<Double> valorPorInstante, double menorValorPossivel, double maiorValorPossivel, String linegraphColor, boolean showWindowBoundaryStream){
+
+        //mxGraph graphScalar = new mxGraph();
+
+        int weightBottomLine = 0, weightTopLine = 20;
+        
+        int shiftYAllInline = lineNodes.size()+30;
+        
+        
+        mxCell v1,v2;
+        int maiorTempo = valorPorInstante.size()-1;
+        //int tempo = Integer.parseInt(matrizDataInline.get(matrizDataInline.size() -1).get(2).toString());
+        
+        graph.getModel().beginUpdate();  
+        
+        int x = spacing*zoom* (0+deslocamento)+15;
+        int y = zoom* (weightTopLine+1+deslocamento+shiftYAllInline);
+        
+        InlineNodeAttribute att = new InlineNodeAttribute(maiorTempo,0,x,y,"",false,false,false);
+        att.setIsGraphLine(true);
+        //Add Horizontal Line
+        Object barraH1 = graph.insertVertex(null, "barra horizontal 1", att,x,y, 1 , 1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
+        
+        x = spacing*zoom* (maiorTempo+deslocamento)+shiftX+30;
+        y = zoom* (weightTopLine+1+deslocamento+shiftYAllInline);
+        
+        att = new InlineNodeAttribute(maiorTempo,0,x,y,"",false,false,false);
+        att.setIsGraphLine(true);
+        Object barraH2 = graph.insertVertex(null, "barra horizontal 2", att,x,y, 1 , 1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
+        
+        graph.insertEdge(null, null,"edge horizontal 3", barraH1, barraH2, styleShapeEdgeLines2);
+        
+        //Add Vertical Line
+        x = spacing*zoom* (0+deslocamento)+15;
+        y = zoom* (weightTopLine+1+deslocamento+shiftYAllInline);
+        
+        att = new InlineNodeAttribute(maiorTempo,0,x,y,"",false,false,false);
+        att.setIsGraphLine(true);
+        Object barraV1 = graph.insertVertex(null, "barra vertical 1", att,x,y, 1 , 1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
+        
+        x = spacing*zoom* (0+deslocamento)+15;
+        y =  zoom* (weightBottomLine+deslocamento+shiftYAllInline);
+        
+        att = new InlineNodeAttribute(maiorTempo,0,x,y,"",false,false,false);
+        att.setIsGraphLine(true);
+        
+        Object barraV2 = graph.insertVertex(null, "barra vertical 2", att,x,y, 1 , 1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
+        graph.insertEdge(null, null,"edge vertical 3", barraV1, barraV2,styleShapeEdgeLines2);
+
+        mxCell cellAnt=null, cellAtual=null;
+        
+        
+        x = spacing*zoom* (0+deslocamento)+10;
+        y =  zoom* (weightTopLine+deslocamento+shiftYAllInline);
+
+        att = new InlineNodeAttribute((int)Math.floor(menorValorPossivel),(int)Math.floor(menorValorPossivel),x,y,""+(int)Math.floor(menorValorPossivel),false,false,false);
+        att.setIsGraphLine(true);
+        mxCell cell = (mxCell) graph.insertVertex(null, null, att,x,y, 1,1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
+
+        
+        x = spacing*zoom* (0+deslocamento)+10;
+        y = zoom* (weightBottomLine+1+deslocamento+shiftYAllInline);
+        
+        att = new InlineNodeAttribute((int)Math.ceil(maiorValorPossivel),(int)Math.ceil(maiorValorPossivel),x,y,""+(int)Math.ceil(maiorValorPossivel),false,false,false);
+        att.setIsGraphLine(true);
+        cell = (mxCell) graph.insertVertex(null, null, att,x,y, 1,1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
+
+        
+        //Insert Horizontal Times
+        for(int j=0;j<=maiorTempo;j++)
+        {
+            
+            double valor = valorPorInstante.get(j);
+            if(valor == -1) //Por enquanto só cai aqui se a rede começa no instante 1. Nesse caso, o valor na posicao 0 é -1
+                continue;
+            
+            double insize = (valor * (weightTopLine - weightBottomLine) / (maiorValorPossivel - menorValorPossivel)) + weightBottomLine;
+
+            float f = Integer.MAX_VALUE;
+            int ia = (int) f;
+
+            if(insize == ia)
+                insize = 0;
+
+            insize = Math.abs(insize - weightTopLine);
+            
+            if(insize == 20 && valor != 0)
             {
                 insize -= 0.5;
             }
@@ -3805,7 +4181,7 @@ public class NetLayoutInlineNew extends NetLayout {
 
             if(j == 0)
             {
-                cellAnt = (mxCell) graph.insertVertex(null, null, att,x,y, 3,3,mxConstants.STYLE_FONTSIZE+"=15;"+mxConstants.STYLE_HORIZONTAL+"=0;" + mxConstants.STYLE_NOLABEL+"=0;" + mxConstants.STYLE_ALIGN+"="+mxConstants.ALIGN_LEFT+";"+mxConstants.STYLE_FILLCOLOR+"=#000000;"+mxConstants.STYLE_STROKECOLOR+"=#000000;");
+                cellAnt = (mxCell) graph.insertVertex(null, null, att,x,y, 3,3,mxConstants.STYLE_FONTSIZE+"=15;"+mxConstants.STYLE_HORIZONTAL+"=0;" + mxConstants.STYLE_NOLABEL+"=0;" + mxConstants.STYLE_ALIGN+"="+mxConstants.ALIGN_LEFT+";"+mxConstants.STYLE_FILLCOLOR+"="+linegraphColor+";"+mxConstants.STYLE_STROKECOLOR+"="+linegraphColor+";");
             }
 
             x =  spacing*zoom* (j+deslocamento)+shiftX;
@@ -3814,12 +4190,34 @@ public class NetLayoutInlineNew extends NetLayout {
             att = new InlineNodeAttribute(j,0,x,y,"",false,false,false);
             att.setIsGraphLine(true);
             att.setIsGraphLineNodes(true);
-            cellAtual = (mxCell) graph.insertVertex(null, null, att,x,y,3,3, mxConstants.STYLE_FONTSIZE+"=15;"+mxConstants.STYLE_HORIZONTAL+"=0;" + mxConstants.STYLE_NOLABEL+"=0;" + mxConstants.STYLE_ALIGN+"="+mxConstants.ALIGN_LEFT+";"+ mxConstants.STYLE_FILLCOLOR+"=#000000;"+mxConstants.STYLE_STROKECOLOR+"=#000000;");
+            cellAtual = (mxCell) graph.insertVertex(null, null, att,x,y,3,3, mxConstants.STYLE_FONTSIZE+"=15;"+mxConstants.STYLE_HORIZONTAL+"=0;" + mxConstants.STYLE_NOLABEL+"=0;" + mxConstants.STYLE_ALIGN+"="+mxConstants.ALIGN_LEFT+";"+ mxConstants.STYLE_FILLCOLOR+"="+linegraphColor+";"+mxConstants.STYLE_STROKECOLOR+"="+linegraphColor+";");
             
             att = new InlineNodeAttribute(j,0,x,y,"",false,false,false);
             att.setIsGraphLine(true);
-            graph.insertEdge(null, null,"edge hor 11", cellAnt, cellAtual,styleShapeEdgeLines+";"+mxConstants.STYLE_ENDARROW+"=0;");
+            graph.insertEdge(null, null,"edge hor 11", cellAnt, cellAtual,mxConstants.STYLE_MOVABLE+"=1;"+mxConstants.STYLE_OPACITY+"=100;"+";"+mxConstants.STYLE_ENDARROW+"=0;"+ mxConstants.STYLE_FILLCOLOR+"="+linegraphColor+";"+mxConstants.STYLE_STROKECOLOR+"="+linegraphColor+";");
             cellAnt = cellAtual;
+            
+            if(showWindowBoundaryStream && (j+1)%windowSizeValue == 0)
+            {
+                
+                x = spacing*zoom* (j+deslocamento)+shiftX+5;
+                //y =  zoom* (weightTopLine+2+deslocamento+shiftYAllInline);
+                y =  zoom* (2+deslocamento);
+
+                att = new InlineNodeAttribute(maiorTempo,0,x,y,"",false,false,false);
+                att.setIsGraphLine(true);
+                Object p1 = graph.insertVertex(null, "", att,x,y, 1 , 1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
+
+                x = spacing*zoom* (j+deslocamento)+shiftX+5;
+                y =  zoom* (weightTopLine+2+deslocamento+shiftYAllInline);
+
+                att = new InlineNodeAttribute(maiorTempo,0,x,y,"",false,false,false);
+                att.setIsGraphLine(true);
+
+                Object p2 = graph.insertVertex(null, "", att,x,y, 1 , 1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
+                graph.insertEdge(null, null,"edge vertical divisa janela", p1, p2,styleShapeEdgeLines2);
+            }
+                
 
 
             x = spacing*zoom* (j+deslocamento)+shiftX+5;
@@ -3836,7 +4234,6 @@ public class NetLayoutInlineNew extends NetLayout {
         //graphComponentLine = new mxGraphComponent(graphScalar);
 
     }
-    
     
     
     JGraphStyle style;
@@ -3989,6 +4386,40 @@ public class NetLayoutInlineNew extends NetLayout {
           }
       });
         
+		if(resolucaoDinamicaRedeEstatica)
+        {
+            System.out.println("Adaptive Resolution in progress...");
+            
+            //Run Adaptive Resolution
+
+            ArrayList<Double> qtdArestasEmCadaTimestamp = plotaTemporalLayoutEstaticoComRecursoStream(true, "", 0, null); //Only adaptive resolution, not edge sampling
+            
+            if(f.openDataSetDialog.progressBar.getValue() < 70)
+                f.openDataSetDialog.progressBar.setValue(f.openDataSetDialog.progressBar.getValue() + 2);
+            
+
+            double[] x = new double[qtdArestasEmCadaTimestamp.size()];
+            String linegraphSampling = "";
+
+            for (int i = 0; i < qtdArestasEmCadaTimestamp.size(); i++)
+            {
+                x[i] = qtdArestasEmCadaTimestamp.get(i);
+                linegraphSampling += (x[i]*100.0) + "\r\n";
+                
+            }
+        //    util.FileHandler.gravaArquivo(linegraphSampling, "F:\\porcentagemArestasTempoRes_" + windowSizeValue + "_ff" + String.valueOf(fadingFactor).replace(".", "") + ".txt", true);
+
+            
+            //Update degrees, put nodes in front of edges and update matrizDataInline
+           //Colocar nós na frente das arestas e atualizar matrizDataInline          
+           
+           updateMatrizDataInLineAnPutNodesInFrontOfEdges();
+           
+           if(f.openDataSetDialog.progressBar.getValue() < 70)
+                f.openDataSetDialog.progressBar.setValue(f.openDataSetDialog.progressBar.getValue() + 2);
+           
+            return;
+        }
         
         graph.getModel().beginUpdate();  
         
@@ -4062,7 +4493,7 @@ public class NetLayoutInlineNew extends NetLayout {
                 InlineNodeAttribute attEdge = new InlineNodeAttribute(tempo,indexSource,tempo,y_inicial,"",false,false,false);
                 attEdge.setIsEdge(true,idSource,idTarget,Math.abs((zoom* (indexTarget+1+deslocamento) + 20) - (zoom* (indexSource+1+deslocamento) + 20)),isNorth);
                 
-                Object edge = graph.insertVertex(null, tempo+" "+idSource+" "+idTarget, attEdge , spacing*zoom* (tempo+deslocamento)+shiftX +0, (zoom* (y_inicial+1+deslocamento) + 20) +4, sizeEdgeTemporalInline, Math.abs((zoom* (indexTarget+1+deslocamento) + 20) - (zoom* (indexSource+1+deslocamento) + 20)) , styleShapeInline);
+                Object edge = graph.insertVertex(null, tempo+" "+idSource+" "+idTarget, attEdge , spacing*zoom* (tempo+deslocamento)+shiftX +0, (zoom* (y_inicial * deslocamento * spaceBetweenLines) + 35)+15*spaceBetweenLines , sizeEdgeTemporalInline, Math.abs((zoom* (indexTarget+1+deslocamento) + 20) - (zoom* (indexSource+1+deslocamento) + 20)) , styleShapeInline);
                 
                 listAllEdges.add(edge);
                 
@@ -4173,6 +4604,7 @@ public class NetLayoutInlineNew extends NetLayout {
                 att = new InlineNodeAttribute(tempo,net,tempo ,index,"      "+net+"  ",false,true,false);
             //    att = new InlineNodeAttribute(tempo,net,tempo,index,"      "+net+"  ",false,true,false);
                 att.setLeft(false);
+                att.setRight(true);
                 v2 = (mxCell) graph.insertVertex(null, "   ", att, spacing*zoom* ( tempo  +5+deslocamento)+(shiftX/3), zoom* (index+deslocamento) + 20, 10,10, style.mxStyle+styleShape+styleShapeRight);
             //    v2 = (mxCell) graph.insertVertex(null, "   ", att, spacing*zoom* (tempo +5+deslocamento)+(shiftX/3), zoom* (index+deslocamento) + 20, 10,10, style.mxStyle+styleShape+styleShapeRight);
           //      v2 = (mxCell) graph.insertVertex(null, "   ", att, spacing*zoom* (100 +5+deslocamento)+(shiftX/3), zoom* (index+deslocamento) + 20, 10,10, style.mxStyle+styleShape+styleShapeRight);
@@ -4218,7 +4650,8 @@ public class NetLayoutInlineNew extends NetLayout {
         finally
         {
             graph.getModel().endUpdate();
-            graphComponent = new mxGraphComponent(graph);
+			if(graphComponent == null)
+				graphComponent = new mxGraphComponent(graph);
 
         }
 
@@ -4233,9 +4666,1235 @@ public class NetLayoutInlineNew extends NetLayout {
         
         //graph.getStylesheet().getDefaultEdgeStyle().put( mxConstants.STYLE_SHAPE, CurvedShape.KEY );
         //graph.getStylesheet().getDefaultEdgeStyle().put( mxConstants.STYLE_EDGE, CurvedEdgeStyle.KEY );
+        
+    }
+
+public HashMap<Integer,Integer> calculateDegreeNodes()
+    {
+        HashMap<Integer,Integer> degreesNodes = new HashMap<>();
+        ArrayList<String> arestasJaCalculadas = new ArrayList<>();
+        for(Object ed : listAllEdges)
+        {
+            mxCell edge = (mxCell) ed;
+            InlineNodeAttribute att = (InlineNodeAttribute) edge.getValue();
+            
+            //Prenche todos com 0 para existir um no na hora de ordenar
+            if(!degreesNodes.containsKey(att.getDestiny()))
+                degreesNodes.put(att.getDestiny(), 0);
+            if(!degreesNodes.containsKey(att.getOrigin()))
+                degreesNodes.put(att.getOrigin(), 0);
+            
+            if(!arestasJaCalculadas.contains(att.getOrigin() + " " + att.getDestiny()))
+            {
+                if(degreesNodes.containsKey(att.getDestiny()))
+                    degreesNodes.put(att.getDestiny(),degreesNodes.get(att.getDestiny())+1);
+
+                if(degreesNodes.containsKey(att.getOrigin()))
+                    degreesNodes.put(att.getOrigin(),degreesNodes.get(att.getOrigin())+1);
+                
+                arestasJaCalculadas.add(att.getOrigin() + " " + att.getDestiny());
+            }
+            
+         //   if(att.getOrigin() == 1558 || att.getDestiny() == 1558)
+         //       System.out.println("Aresta = " + edge.getId());
+
+        }
+        return degreesNodes;
+    }
+        
+    private void updateMatrizDataInLineAnPutNodesInFrontOfEdges()
+    {
+        
+        //Update nodes' degrees
+        HashMap<Integer,Integer> degrees = calculateDegreeNodes();
+        Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
+    //    System.out.println("Tamanho antes matrizDataInline = " + matrizDataInline.size());
+           
+        matrizDataInline = new ArrayList<ArrayList>();
+    //    System.out.println("Tamanho listAttNodes = " + listAttNodes.size());
+        listAttNodes = new ArrayList();
+        ArrayList componentesAresta = new ArrayList();
+        ArrayList arestas = new ArrayList();
+        ArrayList nos = new ArrayList();
+        int id = 0;
+        String[] componentesArestaS;
+         for (Object root1 : roots)
+         {
+             mxCell cell = (mxCell) root1;
+             InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+             if(att.isEdge())
+             {
+                 arestas.add(cell);
+                 //Atualiza matrizDataInline
+                 componentesArestaS = cell.getId().split(" ");
+                 componentesAresta.add(Integer.parseInt(componentesArestaS[1]));
+                 componentesAresta.add(Integer.parseInt(componentesArestaS[2]));
+                 componentesAresta.add(Integer.parseInt(componentesArestaS[0]));
+                 if(!matrizDataInline.contains(componentesAresta))
+                 {
+                     matrizDataInline.add(id, componentesAresta);
+                     id++;
+                 }
+                 componentesAresta = new ArrayList();
+             }
+             else if(att.isNode())
+                 nos.add(cell);
+             
+             else if(att.isLineNode())
+            {
+                if(degrees.get(att.getId_original()) != null)
+                    att.setDegree(degrees.get(att.getId_original()));
+                else
+                    att.setDegree(0);
+        //      System.out.println(att.getDegree());
+
+                if(att.isLeft())
+                    listAttNodes.add(att);
+            }
+         }
+
+         System.out.println(">>> End of the adaptive resolution processing. Now positioning edges in front of nodes in the layout");
+         graph.cellsOrdered(arestas.toArray(), true);
+        // graph.cellsOrdered(nos.toArray(), false); //Essa linha comentada = nós atrás do node line.
+
 
     }
     
+    
+    int qtdArestasDescartadasEdgeSamplingStream = 0;
+    int qtdArestasMantidasEdgeSamplingStream = 0;
+    int qtdArestasMantidasNaJanela = 0;
+    ArrayList<InlineNodeAttribute> listAttNodesSamplingLouvain = new ArrayList<InlineNodeAttribute>();
+    ArrayList listAllEdgesSamplingLouvain = new ArrayList();
+    double proporcaoArestasIntraJanelaAnterior = 0;
+    public static double margemAceitavelParaDiferencaProporcaoArestasIntra;
+    double somaProporcaoArestasIntraJanelasAnteriores = 0;
+    int qtdJanelasStream = 0;
+    HashMap<Integer, List<InlineNodeAttribute>> comunidadesCalculadasJanela = new HashMap<>();
+    
+    
+    StreamSummary<String> streamSummary = new StreamSummary<String>(1000); //Algoritmo space saving. Pra saber o top k mais frequentes. 
+    java.util.List<Counter<String>> counters = null;
+    
+    //Aplica alguma feature de stream (resolução dinamica, edge sampling ou outra no layout temporal estático
+    // (exibe o layout por completo, ao invés de usar animação)
+     public ArrayList<Double> plotaTemporalLayoutEstaticoComRecursoStream(boolean adaptiveResolution, String edgeSampling, int tamanhoAmostra, List<Integer> posicaoAtualNosLayout)
+     {
+        try
+        {
+            String gravarNoArquivo = "";
+            String cabecalhoMapeamentoTxt = "";
+            String nomeArquivo = windowSizeValue + "-" + (fadingFactor + "").replace(".","") + ".txt";
+         //cabecalhoMapeamentoTxt += "Rede: " + redeSendoTestadaStream + ";       Troca de resolucao a cada " + qtdInstantesPraTrocarResolucao + " instantes;     Peso Resolucao Anterior: " + pesoResolucaoAnteriorNaNova + ";       Fading Factor: " + fadingFactor + " (com normalizacao).\r\n \r\n";
+         //util.FileHandler.gravaArquivo(cabecalhoMapeamentoTxt, "D:\\Resolucao Dinamica\\CenarioEstatico\\" + redeSendoTestadaStream + "\\" + nomeArquivo, true);
+            
+            Random r = new Random();
+            
+            //Pega a ultima linha da matriz para verificar o tempo máximo
+            ArrayList<Integer> columnM = matrizDataInline.get(matrizDataInline.size()-1);
+            lastTime = columnM.get(2);
+            
+            matrizGraphLine = new int[lastTime+1];
+            resolucaoEmCadaTimestamp = new int[lastTime+1];
+            
+            //Inicializa matrizgraphLine
+            for(int i=0;i<=lastTime;i++)
+            {
+                matrizGraphLine[i] = 0;
+                resolucaoEmCadaTimestamp[i] = 0;
+            }
+            
+             int tempo = 0;
+             
+            //-----------------------------
+            //Inicializa array usado no edge sampling pra montar o linegraph
+            HashMap<Integer,Integer> maintainedEdgesPerTimeStamp = new HashMap();
+            int arestas_mostradas = 0;
+            for(int y = 0; y <= lastTime; y++)
+            {
+                maintainedEdgesPerTimeStamp.put(y, 0);
+            }
+            
+            //-----------------------------
+            //Inicializa Reservoir pra usar no edge sampling com esse nome
+            
+            int k = tamanhoAmostra;
+            
+           /* if(edgeSampling.equals("Reservoir"))
+                k = matrizDataInline.size() / 3; //Representa o tamanho do sample (qtd de arestas). Mantem 1/3 do total de arestas
+            else if(edgeSampling.equals("PIES"))
+                k = nodesCount / 2; //Representa o tamanho do sample (qtd nós). Mantem 1/2 do total de nós
+            */
+                //Inicializa Reservoir de arestas pra usar no edge sampling Reservior.
+                String reservoirEdges[] = new String[k];   //Cada string tem origem;destino;tempo
+                for(int i = 0; i < reservoirEdges.length; i++)
+                    reservoirEdges[i] = ""; 
+            
+           
+                //Inicializa Reservoir de nos e de arestas pra usar no PIES.
+                ArrayList<Integer> reservoirNos = new ArrayList<>();   //Cada string tem origem;destino;tempo
+                ArrayList<String> reservoirEdgesPIES = new ArrayList<>();
+                int t = 1; //usado no PIES
+                int qtdArestasNoRservoirEdges = 0;
+            //-----------------------------
+            
+            
+             
+             for(int i = 0; i < matrizDataInline.size(); i++){
+            //for(ArrayList<Integer> column : matrizDataInline){
+                ArrayList<Integer> column = matrizDataInline.get(i);
+                String[] tokens =  new String[3];
+                //lastTime = tempo;
+
+                tokens[0] = column.get(0).toString();
+                tokens[1] = column.get(1).toString();
+                tokens[2] = column.get(2).toString();
+
+                int idSource = Integer.parseInt(tokens[0]);
+                int idTarget = Integer.parseInt(tokens[1]);
+                tempo = Integer.parseInt(tokens[2]);
+                
+                if(!lineNodes.contains(idSource)){
+                    lineNodes.add(idSource);
+                }
+                if(!lineNodes.contains(idTarget)){
+                    lineNodes.add(idTarget);
+                }
+             
+                int tempoNovo;
+                if(adaptiveResolution && edgeSampling.equals("")) //If computing adaptive resolution (adaptiveResolution = true and edgesampling != "" when both are used (edgesampling over an adaptive resolution layout))
+                {
+                    //Se mudou de intervalo, precisa mudar a resolucao
+                    if(((tempo / windowSizeValue) * windowSizeValue) > tempoInicialIntervalo)// && tempoInicialIntervalo != 0)
+                    {
+                        tempoInicialIntervalo = (tempo / windowSizeValue) * windowSizeValue;
+                        calculaResolucaoDinamica();
+                        System.out.println("Intervalo com fim em " + tempoInicialIntervalo + ": resolucao nova: " + resolucaoAtualStream + ". Resolucao anterior = " + resolucaoAnteriorStream); 
+                        if(f.openDataSetDialog.progressBar.getValue() < 70)
+                            f.openDataSetDialog.progressBar.setValue(f.openDataSetDialog.progressBar.getValue() + 3);
+                    }
+
+                    //TODO: Se a aresta for descartada no edge sampling, ela nao pode ser considerada pra resolução dinamica.
+                    linegraphStream[tempo % windowSizeValue]++;
+
+
+                    //if(resolucaoAnteriorStream == 1 && resolucaoAtualStream == 1)
+                    if(tempoInicialIntervalo == 0) 
+                        tempoNovo = (int) Math.floor((tempo - tempoInicialIntervalo)/ resolucaoAtualStream) + tempoInicialIntervalo;
+
+                    else
+                    {
+                        //Decide onde plotar a primeira aresta dessa resolucao nova. Se tempoInicialIntervalo - timestampUltimaArestaResolucaoAnterior == 1, então a plotagem é em instantes consecutivos e não precisa pular nenhum instante.
+                        if(tempoInicialIntervalo > timestampUltimaArestaResolucaoAnterior) 
+                        {
+                            int qtosInstantesFaltamProFimDoIntervalo = tempoInicialIntervalo - timestampUltimaArestaResolucaoAnterior;
+                            timestampReferenciaPraPlotarNovaResolucao  = ((qtosInstantesFaltamProFimDoIntervalo / resolucaoAnteriorStream == 0) ? 1 : (qtosInstantesFaltamProFimDoIntervalo / resolucaoAnteriorStream)) + timestampUltimaArestaPlotada;
+
+                            corResolucao = corResolucao.equals("#000080") ? "#b30000" : "#000080";
+                            //tempoNovo = (int) Math.floor((tempo - tempoInicialIntervalo)/ resolucaoAtualStream) + timestampReferenciaPraPlotarNovaResolucao; 
+                        }
+                        tempoNovo = (int) Math.floor((tempo - tempoInicialIntervalo)/ resolucaoAtualStream) + timestampReferenciaPraPlotarNovaResolucao;
+                    }
+                }
+                else //Se nao eh resolucao dinamica, mantem o instante original da aresta
+                    tempoNovo = tempo;
+            
+                if(adaptiveResolution && edgeSampling.equals("")) //Só reescreve se resoluçao dinamica sem sampling (construindo layout)
+                {
+                    if(timestampUltimaArestaPlotada == 0)
+                    {
+                        int m = timestampUltimaArestaPlotada;
+                        //Plota o instante de tempo
+                        graph.getModel().beginUpdate(); 
+                        InlineNodeAttribute att = new InlineNodeAttribute(m,m,m,1,m + " - " + resolucaoAtualStream,true,false,false);
+                        mxCell cell2 = (mxCell) graph.insertVertex(null, m + "T", att, spacing*zoom* (m+deslocamento)+shiftX+5, zoom* (1+deslocamento), 1,1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
+                        graph.getModel().endUpdate(); 
+                    }
+
+                    for(int m = timestampUltimaArestaPlotada + 1; m <= tempoNovo; m++)
+                    {
+                        resolucaoEmCadaTimestamp[m] = resolucaoAtualStream;
+
+                        //Plota o instante de tempo
+                        graph.getModel().beginUpdate(); 
+                        InlineNodeAttribute att = new InlineNodeAttribute(m,m,m,1,m + " - " + resolucaoAtualStream,true,false,false);
+                        mxCell cell2 = (mxCell) graph.insertVertex(null, m + "T", att, spacing*zoom* (m+deslocamento)+shiftX+5, zoom* (1+deslocamento), 1,1, styleShapeInvisibleNodes.replace(mxConstants.STYLE_OPACITY+"=100;", mxConstants.STYLE_OPACITY+"=0;")+style.mxStyle);
+                        graph.getModel().endUpdate(); 
+
+                    }
+                }
+            
+            // >>>>>> Edge sampling <<<<<<<
+
+            if(edgeSampling == "" || edgeSampling == null) //add all edges
+            {
+                insereArestaNoLayout(idSource, idTarget, tempoNovo, posicaoAtualNosLayout);
+                maintainedEdgesPerTimeStamp.put(tempoNovo, maintainedEdgesPerTimeStamp.get(tempoNovo)+1);
+                qtdArestasMantidasEdgeSamplingStream++;
+            }
+            else if(edgeSampling.equals("Random")) //Pra cada aresta que chega, aceita ou rejeita com probabilidade de 50%
+            {
+                int random = r.nextInt(2); //random entre 0 e 1. zero rejeita a aresta; um aceita.
+                if(random == 1)
+                {
+                    insereArestaNoLayout(idSource, idTarget, tempoNovo, posicaoAtualNosLayout);
+                    maintainedEdgesPerTimeStamp.put(tempoNovo, maintainedEdgesPerTimeStamp.get(tempoNovo)+1);
+                    qtdArestasMantidasEdgeSamplingStream++;
+            //        util.FileHandler.gravaArquivo(idSource + "\t" + idTarget + "\t" + tempoNovo + "\r\n", "F:\\Sampling\\random.txt", true);
+                }
+                else
+                    qtdArestasDescartadasEdgeSamplingStream++;
+
+            }
+            //Paper: https://www.cs.umd.edu/~samir/498/vitter.pdf
+            //https://gregable.com/2007/10/reservoir-sampling.html
+            //https://www.geeksforgeeks.org/reservoir-sampling/ 
+            else if(edgeSampling.equals("Reservoir")) // Streaming Uniform Edge Sampling
+            {
+                if(i<k) // reservoir[] is the output array. Initialize it with first k elements from stream
+                    reservoirEdges[i] = idSource + ";" + idTarget + ";" + tempoNovo;
+                else // Iterate from the (k+1)th element to nth element 
+                {
+                    int j = r.nextInt(i + 1); // Pick a random index from 0 to i. 
+              
+                    // If the randomly  picked index is smaller than k, then replace the element present at the index 
+                    // with new element from stream 
+                    if(j < k) 
+                        reservoirEdges[j] = idSource + ";" + idTarget + ";" + tempoNovo;
+                    }
+            }
+            //Paper: https://dl.acm.org/citation.cfm?id=2601438, Algorithm 5
+            else if(edgeSampling.contains("PIES")) //Partially Induced Edge Sampling PIES
+            {
+                if(edgeSampling.equals("Partial-PIES")) //Partial-PIES is the use of PIES in each window (it is not in the paper)
+                {
+                    //Se nova janela, reseta os reservoirs
+                    if(((tempo / windowSizeValue) * windowSizeValue) > tempoInicialIntervalo)// && tempoInicialIntervalo != 0)
+                    {
+                        qtdArestasMantidasNaJanela = 0;
+                        for(int ii = 0; ii < reservoirEdgesPIES.size(); ii++)
+                        {
+                            if(reservoirEdgesPIES.get(ii) == "")
+                                continue;
+                            String[] aresta = reservoirEdgesPIES.get(ii).split(";");
+                            int tempoNovoEssaAresta = Integer.parseInt(aresta[2]);
+                            insereArestaNoLayout(Integer.parseInt(aresta[0]), Integer.parseInt(aresta[1]), tempoNovoEssaAresta, posicaoAtualNosLayout);
+                            maintainedEdgesPerTimeStamp.put(tempoNovoEssaAresta, maintainedEdgesPerTimeStamp.get(tempoNovoEssaAresta)+1);
+                            qtdArestasMantidasNaJanela++;
+                        }
+                        qtdArestasMantidasEdgeSamplingStream += qtdArestasMantidasNaJanela;
+                        //qtdArestasDescartadasEdgeSamplingStream = matrizDataInline.size() - qtdArestasMantidasEdgeSamplingStream;
+                
+                
+                        tempoInicialIntervalo = (tempo / windowSizeValue) * windowSizeValue;
+                        System.out.println("Intervalo com fim em " + tempoInicialIntervalo + ": " + qtdArestasMantidasNaJanela + " arestas mantidas."); 
+                        reservoirNos = new ArrayList<>();
+                        reservoirEdgesPIES = new ArrayList<>();
+                    }
+                }
+                
+                if(reservoirNos.size() < k)
+                {
+                    if(!reservoirNos.contains(idSource))
+                        reservoirNos.add(idSource);
+                    if(!reservoirNos.contains(idTarget))
+                        reservoirNos.add(idTarget);
+
+                    reservoirEdgesPIES.add(idSource + ";" + idTarget + ";" + tempoNovo);
+                    qtdArestasNoRservoirEdges++;
+                }
+                else
+                {
+                    double Pe = (double)qtdArestasNoRservoirEdges / (double)t;
+                    double rand = randomDouble(); //Paper: https://dl.acm.org/citation.cfm?id=2601438, Algorithm 5, line 12
+                    if(rand <= Pe)
+                    {
+                        int idx1 = 0;
+                        int idx2 = 0;
+                        while(idx1 == idx2)
+                        {
+                            idx1 = r.nextInt(reservoirNos.size() -1);
+                            idx2 = r.nextInt(reservoirNos.size() -1);
+                        }
+                        //Insere o novo nó e remove algum antigo aleatório e todas as arestas incidentes a ele.
+                        if(!reservoirNos.contains(idSource))
+                        {
+                            reservoirNos.add(idSource); //Insere o novo
+                            int idNoAntigo = reservoirNos.get(idx1);
+                            reservoirNos.remove(idx1); //Remove o antigo
+                            for(int pos = 0; pos < reservoirEdgesPIES.size(); pos++) //Remove as arestas incidentes ao nó antigo
+                            {
+                                if(reservoirEdgesPIES.get(pos).contains(idNoAntigo + ";"))
+                                    reservoirEdgesPIES.set(pos, "");
+                            }
+                        }
+                        if(!reservoirNos.contains(idTarget))
+                        {
+                            reservoirNos.add(idTarget); //Insere o novo
+                            
+                            int idNoAntigo = reservoirNos.get(idx2);
+                            reservoirNos.remove(idx2); //Remove o antigo
+                            
+                            for(int pos = 0; pos < reservoirEdgesPIES.size(); pos++) //Remove as arestas incidentes ao nó antigo
+                            {
+                                if(reservoirEdgesPIES.get(pos).contains(idNoAntigo + ";"))
+                                    reservoirEdgesPIES.set(pos, "");
+                            }
+                        }
+                    }
+                    if(reservoirNos.contains(idSource) && reservoirNos.contains(idTarget))
+                        reservoirEdgesPIES.add(idSource + ";" + idTarget + ";" + tempoNovo);
+                }
+                t++;
+            }
+            else if(edgeSampling.equals("Intra-Louvain") || edgeSampling.equals("Intra-Infomap"))
+            {
+                
+                //Se nova janela, calcula Louvain e reseta os vetores
+                if(((tempo / windowSizeValue) * windowSizeValue) > tempoInicialIntervalo)// && tempoInicialIntervalo != 0)
+                {
+                    qtdArestasMantidasNaJanela = 0;
+                    
+                    if(edgeSampling.equals("Intra-Louvain")) //CALCULO DO ALGORITMO DE COMUNIDADE LOUVAIN NA JANELA
+                    {
+                        //atualizacao blind (toda janela recomputa as comunidades)
+                        //comunidades = new SLM_Louvain().execute(listAttNodesSamplingLouvain, listAllEdgesSamplingLouvain, "Original Louvain sampling");
+                        
+                        //Proposta de forma não-blind: ver se é preciso recalcular as comunidades com base no passado
+                        if(tempoInicialIntervalo < windowSizeValue) //Se primeira janela, calcula comunidades
+                        {
+                            comunidadesCalculadasJanela = new SLM_Louvain().execute(listAttNodesSamplingLouvain, listAllEdgesSamplingLouvain, "Original Louvain sampling",calculate_with_weight,weight_external_file,edgeWeight_external_file);
+                            
+                            counters = streamSummary.topK(kNodes); //top-k nós mais frequentes, onde k = x% do total de nós da rede.
+                            ArrayList topkNodes = new ArrayList();
+                            for(Counter c : counters)
+                                topkNodes.add(c.getItem().toString());
+                            
+                            //Insere apenas as arestas intra-comunidades que estao no topk
+                            for(List<InlineNodeAttribute> nosDaComunidade : comunidadesCalculadasJanela.values())
+                            {
+                                ArrayList idsNosDaComunidade = new ArrayList();
+
+                                for(int iii = 0; iii < nosDaComunidade.size(); iii++)
+                                    idsNosDaComunidade.add(nosDaComunidade.get(iii).getId_original() + "");
+
+                                for(Object edge : listAllEdgesSamplingLouvain)
+                                {
+                                    String[] edgeS = edge.toString().split(" ");
+                                    if(idsNosDaComunidade.contains(edgeS[1]) && idsNosDaComunidade.contains(edgeS[2]))
+                                    {
+                                        //se um dos dois nós dela está no topk acumulado, aceita.
+                                        if(topkNodes.contains(edgeS[1]) || topkNodes.contains(edgeS[2]))
+                                        {
+                                            insereArestaNoLayout(Integer.parseInt(edgeS[1]), Integer.parseInt(edgeS[2]), Integer.parseInt(edgeS[0]), posicaoAtualNosLayout);
+                                            maintainedEdgesPerTimeStamp.put(Integer.parseInt(edgeS[0]), maintainedEdgesPerTimeStamp.get(Integer.parseInt(edgeS[0]))+1);
+                                            qtdArestasMantidasNaJanela++;
+                                            
+                                           // streamSummary.offer(edgeS[1]);
+                                           // streamSummary.offer(edgeS[2]);
+                                        }
+                                        else //Recusa todas as arestas que nao tenham ao menos um nó no topk
+                                        {
+                                            
+                                        }
+ 
+                                    }
+
+                                }
+                            }
+                      /*      tempoInicialIntervalo = (tempo / windowSizeValue) * windowSizeValue;
+                            proporcaoArestasIntraJanelaAnterior = (double)qtdArestasMantidasNaJanela / (double) listAllEdgesSamplingLouvain.size();
+                            qtdArestasMantidasEdgeSamplingStream += qtdArestasMantidasNaJanela;
+                            System.out.println("Intervalo com fim em " + tempoInicialIntervalo + ": " + qtdArestasMantidasNaJanela + " arestas mantidas de " + listAllEdgesSamplingLouvain.size() + "."); 
+
+                            listAttNodesSamplingLouvain = new ArrayList<InlineNodeAttribute>();
+                            listAllEdgesSamplingLouvain = new ArrayList();
+                            */
+                        }
+                        else //Se não for a primeira janela, vê se é preciso recalcular as comunidades com base no passado
+                        {
+                            //verifica se as comunidades calculadas anteriormente ainda representam a rede (a proporção de arestas intra mudou?)
+                            for(List<InlineNodeAttribute> nosDaComunidade : comunidadesCalculadasJanela.values()) 
+                            {
+                                ArrayList idsNosDaComunidade = new ArrayList();
+
+                                for(int iii = 0; iii < nosDaComunidade.size(); iii++)
+                                    idsNosDaComunidade.add(nosDaComunidade.get(iii).getId_original() + "");
+
+                                for(Object edge : listAllEdgesSamplingLouvain)
+                                {
+                                    String[] edgeS = edge.toString().split(" ");
+                                    if(idsNosDaComunidade.contains(edgeS[1]) && idsNosDaComunidade.contains(edgeS[2]))
+                                    {
+                                     //   insereArestaNoLayout(Integer.parseInt(edgeS[1]), Integer.parseInt(edgeS[2]), Integer.parseInt(edgeS[0]), posicaoAtualNosLayout);
+                                     //   maintainedEdgesPerTimeStamp.put(Integer.parseInt(edgeS[0]), maintainedEdgesPerTimeStamp.get(Integer.parseInt(edgeS[0]))+1);
+                                        qtdArestasMantidasNaJanela++;
+                                    }
+                                }
+                            }
+                            double proporcaoArestasIntra = (double)qtdArestasMantidasNaJanela / (double) listAllEdgesSamplingLouvain.size();
+                            
+                            double mediaProporcaoArestasIntraJanelasAnteriores = (double) somaProporcaoArestasIntraJanelasAnteriores / ++qtdJanelasStream;
+                    
+                            System.out.println("margemAceitavelParaDiferencaProporcaoArestasIntra = " + margemAceitavelParaDiferencaProporcaoArestasIntra);
+                            //Se a qtd de arestas intra está fora do esperado, precisa recalcular comunidades
+                            if(proporcaoArestasIntra < mediaProporcaoArestasIntraJanelasAnteriores - mediaProporcaoArestasIntraJanelasAnteriores*margemAceitavelParaDiferencaProporcaoArestasIntra)
+                            {
+                                comunidadesCalculadasJanela = new SLM_Louvain().execute(listAttNodesSamplingLouvain, listAllEdgesSamplingLouvain, "Original Louvain sampling",calculate_with_weight,weight_external_file,edgeWeight_external_file);
+                                System.out.println("Recalculei comunidade pois a proporcao anterior era " + mediaProporcaoArestasIntraJanelasAnteriores + " e a nova " + proporcaoArestasIntra);
+                            }
+                            
+                            qtdArestasMantidasNaJanela = 0;
+                            
+                            counters = streamSummary.topK(kNodes); //top-k nós mais frequentes, onde k = x% do total de nós da rede.
+                            ArrayList topkNodes = new ArrayList();
+                            for(Counter c : counters)
+                                topkNodes.add(c.getItem().toString());
+                            
+                            for(List<InlineNodeAttribute> nosDaComunidade : comunidadesCalculadasJanela.values()) 
+                            {
+                                ArrayList idsNosDaComunidade = new ArrayList();
+
+                                for(int iii = 0; iii < nosDaComunidade.size(); iii++)
+                                    idsNosDaComunidade.add(nosDaComunidade.get(iii).getId_original() + "");
+
+                                for(Object edge : listAllEdgesSamplingLouvain)
+                                {
+                                    String[] edgeS = edge.toString().split(" ");
+                                    if(idsNosDaComunidade.contains(edgeS[1]) && idsNosDaComunidade.contains(edgeS[2]))
+                                    {
+                                        //Calcula probabilidade de aceitar a aresta intra
+                                        //se um dos dois nós dela está no topk acumulado, aceita.
+                                        if(topkNodes.contains(edgeS[1]) || topkNodes.contains(edgeS[2]))
+                                        {
+                                            insereArestaNoLayout(Integer.parseInt(edgeS[1]), Integer.parseInt(edgeS[2]), Integer.parseInt(edgeS[0]), posicaoAtualNosLayout);
+                                            maintainedEdgesPerTimeStamp.put(Integer.parseInt(edgeS[0]), maintainedEdgesPerTimeStamp.get(Integer.parseInt(edgeS[0]))+1);
+                                            qtdArestasMantidasNaJanela++;
+                                            
+                                           // streamSummary.offer(edgeS[1]);
+                                           // streamSummary.offer(edgeS[2]);
+                                        }
+                                        else // A aresta não possui nós dentro do topk nós mais frequentes
+                                        {
+                                            //Simplesmente ignora a aresta. Nesse caso, comenta o código desse else
+                                            
+                                            //Aceita com probabilidade 0,5
+                                        /*    int random = r.nextInt(2); //random entre 0 e 1. zero rejeita a aresta; um aceita.
+                                            if(random == 1)
+                                            {
+                                                insereArestaNoLayout(Integer.parseInt(edgeS[1]), Integer.parseInt(edgeS[2]), Integer.parseInt(edgeS[0]), posicaoAtualNosLayout);
+                                                maintainedEdgesPerTimeStamp.put(Integer.parseInt(edgeS[0]), maintainedEdgesPerTimeStamp.get(Integer.parseInt(edgeS[0]))+1);
+                                                qtdArestasMantidasEdgeSamplingStream++;
+                                                
+                                                streamSummary.offer(edgeS[1]);
+                                                streamSummary.offer(edgeS[2]);
+                                            }
+                                            */
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            
+                        }
+                    }
+                   // else // TODO: Deteccao Infomap nao esta funcionando aqui
+                   //     comunidadesCalculadasJanela = new communities.InfoMap().execute(listAllEdgesSamplingLouvain, listAttNodesSamplingLouvain);
+                    
+                    tempoInicialIntervalo = (tempo / windowSizeValue) * windowSizeValue;
+                    
+                    somaProporcaoArestasIntraJanelasAnteriores += (double)qtdArestasMantidasNaJanela / (double) listAllEdgesSamplingLouvain.size();
+                    
+                    //proporcaoArestasIntraJanelaAnterior = (double)qtdArestasMantidasNaJanela / (double) listAllEdgesSamplingLouvain.size();
+                    // System.out.println("Após o novo calculo de comunidades, a proporcao passou a ser de " + ((double)somaProporcaoArestasIntraJanelasAnteriores/(double)qtdJanelasStream));
+                            
+                    qtdArestasMantidasEdgeSamplingStream += qtdArestasMantidasNaJanela;
+                    System.out.println("Intervalo com fim em " + tempoInicialIntervalo + ": " + qtdArestasMantidasNaJanela + " arestas mantidas de " + listAllEdgesSamplingLouvain.size()); 
+
+                    listAttNodesSamplingLouvain = new ArrayList<InlineNodeAttribute>();
+                    listAllEdgesSamplingLouvain = new ArrayList();
+                }
+                
+                InlineNodeAttribute att1 = new InlineNodeAttribute(0, (int) idSource, 0, 0, idSource+"", false, false, false);
+                if(!listAttNodesLocalJaTemNo(listAttNodesSamplingLouvain, idSource))
+                    listAttNodesSamplingLouvain.add(att1);
+                     
+                InlineNodeAttribute att2 = new InlineNodeAttribute(0, (int) idTarget, 0, 0, idTarget+"", false, false, false);
+                if(!listAttNodesLocalJaTemNo(listAttNodesSamplingLouvain, idTarget))
+                    listAttNodesSamplingLouvain.add(att2);
+                
+                listAllEdgesSamplingLouvain.add(tempoNovo + " " + idSource + " " + idTarget);
+                
+                streamSummary.offer(idSource + "");
+                streamSummary.offer("" + idTarget);
+                
+            }
+
+        //    gravarNoArquivo += idSource + "\t" + idTarget + "\t" + tempo + "\t" + tempoNovo + "\t" + resolucaoAtualStream + "\r\n";
+            timestampUltimaArestaResolucaoAnterior = tempo;
+            timestampUltimaArestaPlotada = tempoNovo;
+            
+            /*if(exibirNivelAtividadeNos)
+            {
+                int[] ultimoTimestamp = {-1,-1};
+                if(lineNodesSelecionadosStream.contains(idSource + "") || lineNodesSelecionadosStream.contains(idTarget + ""))
+                    ultimoTimestamp = getUltimoTimeStampEmQueONoApareceuSeAtivo(idSource, idTarget, tempoNovo);
+                        
+                if(ultimoTimestamp[0] != -1 && lineNodesSelecionadosStream.contains(idSource + ""))
+                    plotaLinhasHorizontaisSeAtivo(idSource, tempoNovo, ultimoTimestamp[0]);
+
+                if(ultimoTimestamp[1] != -1 && lineNodesSelecionadosStream.contains(idTarget + ""))
+                    plotaLinhasHorizontaisSeAtivo(idTarget, tempoNovo, ultimoTimestamp[1]);
+
+            }
+            */
+         }
+             
+        if(edgeSampling.equals("Reservoir")) //Lá em cima montou o reservoir. Agora, ao término do stream, plota as arestas dele. Como dá pra perceber, não dá pra usar esse sampling desse jeito quando plota em tempo real o stream 
+        {
+            for(int i = 0; i < reservoirEdges.length; i++)
+            {
+                if(reservoirEdges[i] == "")
+                    break;
+                String[] aresta = reservoirEdges[i].split(";");
+                int tempoNovo = Integer.parseInt(aresta[2]);
+                insereArestaNoLayout(Integer.parseInt(aresta[0]), Integer.parseInt(aresta[1]), tempoNovo, posicaoAtualNosLayout);
+                maintainedEdgesPerTimeStamp.put(tempoNovo, maintainedEdgesPerTimeStamp.get(tempoNovo)+1);
+                qtdArestasMantidasEdgeSamplingStream++;
+            }
+            qtdArestasDescartadasEdgeSamplingStream = matrizDataInline.size() - qtdArestasMantidasEdgeSamplingStream;
+        }
+        else if(edgeSampling.equals("PIES")) //Plota as arestas amostradas pelo PIES
+        {
+            for(int i = 0; i < reservoirEdgesPIES.size(); i++)
+            {
+                if(reservoirEdgesPIES.get(i) == "")
+                    continue;
+                String[] aresta = reservoirEdgesPIES.get(i).split(";");
+                int tempoNovo = Integer.parseInt(aresta[2]);
+                insereArestaNoLayout(Integer.parseInt(aresta[0]), Integer.parseInt(aresta[1]), tempoNovo, posicaoAtualNosLayout);
+                maintainedEdgesPerTimeStamp.put(tempoNovo, maintainedEdgesPerTimeStamp.get(tempoNovo)+1);
+                qtdArestasMantidasEdgeSamplingStream++;
+            }
+            qtdArestasDescartadasEdgeSamplingStream = matrizDataInline.size() - qtdArestasMantidasEdgeSamplingStream;
+        }
+        else if(edgeSampling.equals("Intra-Louvain") || edgeSampling.equals("Intra-Infomap")) //Executa para o pedaço final do stream (se o stream acabou no instante 379 e a janela é tamanho 100, esse if executa para os ultimos 79 instantes)
+        {
+            qtdArestasMantidasNaJanela = 0;
+            HashMap<Integer, List<InlineNodeAttribute>> comunidades;
+            
+            if(edgeSampling.equals("Intra-Louvain")) //CALCULO DO ALGORITMO DE COMUNIDADE LOUVAIN NA JANELA
+                comunidades = new SLM_Louvain().execute(listAttNodesSamplingLouvain, listAllEdgesSamplingLouvain, "Original Louvain sampling",calculate_with_weight,weight_external_file,edgeWeight_external_file);
+            else
+                comunidades = new communities.InfoMap().execute(listAllEdgesSamplingLouvain, listAttNodesSamplingLouvain,calculate_with_weight,weight_external_file,edgeWeight_external_file);
+            //Insere apenas as arestas intra-comunidades
+            
+            counters = streamSummary.topK(kNodes); //top-k nós mais frequentes, onde k = 1/4 do total de nós da rede.
+            ArrayList topkNodes = new ArrayList();
+            for(Counter c : counters)
+                topkNodes.add(c.getItem().toString());
+                            
+            for(List<InlineNodeAttribute> nosDaComunidade : comunidades.values())
+            {
+                ArrayList idsNosDaComunidade = new ArrayList();
+
+                for(int iii = 0; iii < nosDaComunidade.size(); iii++)
+                    idsNosDaComunidade.add(nosDaComunidade.get(iii).getId_original() + "");
+
+                for(Object edge : listAllEdgesSamplingLouvain)
+                {
+                    String[] edgeS = edge.toString().split(" ");
+                    if(idsNosDaComunidade.contains(edgeS[1]) && idsNosDaComunidade.contains(edgeS[2]))
+                    {
+                        //Calcula probabilidade de aceitar a aresta intra
+                        //se um dos dois nós dela está no topk acumulado, aceita.
+                        if(topkNodes.contains(edgeS[1]) || topkNodes.contains(edgeS[2]))
+                        {
+                            insereArestaNoLayout(Integer.parseInt(edgeS[1]), Integer.parseInt(edgeS[2]), Integer.parseInt(edgeS[0]), posicaoAtualNosLayout);
+                            maintainedEdgesPerTimeStamp.put(Integer.parseInt(edgeS[0]), maintainedEdgesPerTimeStamp.get(Integer.parseInt(edgeS[0]))+1);
+                            qtdArestasMantidasNaJanela++;
+                        }
+                        else // A aresta não possui nós dentro do topk nós mais frequentes
+                        {
+                            //Simplesmente ignora a aresta. Nesse caso, comenta o código desse else
+
+                            //Aceita com probabilidade 0,5
+                        /*    int random = r.nextInt(2); //random entre 0 e 1. zero rejeita a aresta; um aceita.
+                            if(random == 1)
+                            {
+                                insereArestaNoLayout(Integer.parseInt(edgeS[1]), Integer.parseInt(edgeS[2]), Integer.parseInt(edgeS[0]), posicaoAtualNosLayout);
+                                maintainedEdgesPerTimeStamp.put(Integer.parseInt(edgeS[0]), maintainedEdgesPerTimeStamp.get(Integer.parseInt(edgeS[0]))+1);
+                                qtdArestasMantidasEdgeSamplingStream++;
+                            }
+                        */
+                        }
+                        
+                    }
+
+                }
+            }
+            qtdArestasMantidasEdgeSamplingStream += qtdArestasMantidasNaJanela;
+            System.out.println("Intervalo de " + (tempoInicialIntervalo + 1) + " ate o fim da rede: " + qtdArestasMantidasNaJanela + " arestas mantidas de " + listAllEdgesSamplingLouvain.size() + "."); 
+                        
+        }
+             
+            int[] newMatrizGraphLine = new int[timestampUltimaArestaPlotada + 1];
+             ArrayList<Double> newresolucaoEmCadaTimestamp = new ArrayList<Double>();
+             
+             for(int pos = 0; pos <= timestampUltimaArestaPlotada; pos++)
+             {
+                 newMatrizGraphLine[pos] = matrizGraphLine[pos];
+                 newresolucaoEmCadaTimestamp.add((double)resolucaoEmCadaTimestamp[pos]);
+             }
+             
+             matrizGraphLine = newMatrizGraphLine;
+
+           //ultimoTimestepPlottedStreamTemporal = (int) novosElementos.get(novosElementos.size()-1).getTimestep();
+           //ultimoTimestepPlottedStreamTemporal = timestampUltimaArestaPlotada;
+           //util.FileHandler.gravaArquivo(gravarNoArquivo, "D:\\Resolucao Dinamica\\" + redeSendoTestadaStream + "\\" + "Mapeamento.txt", true);
+        //   util.FileHandler.gravaArquivo(gravarNoArquivo, "D:\\Resolucao Dinamica\\" + "combinacao" + "\\" + "Mapeamento.txt", true);
+         
+         //Insert Horizontal Lines
+         mxCell v1,v2;
+         if(removeuNosLaterais || (adaptiveResolution && edgeSampling.equals(""))) //Se removeu quando limpou o layout ou qdo ta construindo o layout pela 1a vez, plota de novo
+        // if(!adaptiveResolution && !edgeSampling.equals("")) //Desenha tudo só se nao veio da resoluçao adaptativa
+         {
+            JGraphStyle style = NetLayoutInlineNew.JGraphStyle.ROUNDED;
+
+            String styleShape = mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_ELLIPSE+";";
+            styleShape += mxConstants.STYLE_NOLABEL+"=0;";
+            styleShape += mxConstants.STYLE_RESIZABLE+"=0;";
+            styleShape += mxConstants.STYLE_OPACITY+"=100;";
+            styleShape += mxConstants.STYLE_VERTICAL_LABEL_POSITION+"="+mxConstants.ALIGN_MIDDLE+";";
+            styleShape += mxConstants.STYLE_FONTCOLOR+"=black;";
+                
+            for(Integer net : lineNodes ){
+                
+                
+                //styleShape += mxConstants.STYLE_ALIGN+"=100px;";
+                
+                //Jeann
+                String styleShapeLeft = mxConstants.STYLE_LABEL_POSITION+"="+mxConstants.ALIGN_LEFT+";" + mxConstants.LABEL_INSET+"=100px;";// +  mxConstants.STYLE_ALIGN+"=100px;";
+                String styleShapeRight = mxConstants.STYLE_LABEL_POSITION+"="+mxConstants.ALIGN_RIGHT+";" +  mxConstants.STYLE_ALIGN+"=100px;";
+
+                int index = lineNodes.indexOf(net);
+                index++;
+                
+                InlineNodeAttribute att = new InlineNodeAttribute(timestampUltimaArestaPlotada,net,0,index,"  "+net+"      ",false,true,false);
+                att.setLeft(true);
+                
+                listAttNodes.add(att);
+                
+                v1 = (mxCell) graph.insertVertex(null, "   ", att, spacing*zoom* (0+deslocamento)+(shiftX/3), zoom* (index+deslocamento) + 20, 10,10, style.mxStyle+styleShape+styleShapeLeft);
+                
+                //Nó e rótulo à direita do layout temporal
+                att = new InlineNodeAttribute(timestampUltimaArestaPlotada,net,timestampUltimaArestaPlotada,index,"      "+net+"  ",false,true,false);
+            //    att = new InlineNodeAttribute(tempo,net,tempo,index,"      "+net+"  ",false,true,false);
+                att.setLeft(false);
+                v2 = (mxCell) graph.insertVertex(null, "   ", att, spacing*zoom* (timestampUltimaArestaPlotada +5+deslocamento)+(shiftX/3), zoom* (index+deslocamento) + 20, 10,10, style.mxStyle+styleShape+styleShapeRight);
+            //    v2 = (mxCell) graph.insertVertex(null, "   ", att, spacing*zoom* (tempo +5+deslocamento)+(shiftX/3), zoom* (index+deslocamento) + 20, 10,10, style.mxStyle+styleShape+styleShapeRight);
+          //      v2 = (mxCell) graph.insertVertex(null, "   ", att, spacing*zoom* (100 +5+deslocamento)+(shiftX/3), zoom* (index+deslocamento) + 20, 10,10, style.mxStyle+styleShape+styleShapeRight);
+
+                graph.insertEdge(null, null,net+"", v1, v2,styleShapeEdgeLines+";"+mxConstants.STYLE_ENDARROW+"=0;");
+            }
+         }
+            //Linegraph resolução
+            //plotaLineGraphEstaticoGenerico(newresolucaoEmCadaTimestamp, 1, qtdInstantesPraTrocarResolucao,"#000000");
+            
+            List<Integer> matrizGraphLineList = new ArrayList<>(matrizGraphLine.length);
+
+		for (Integer i : matrizGraphLine) {
+			matrizGraphLineList.add(i/2); //Divide por 2 pq há no linegraph (dois nós) a cada aresta. Não posso simplesmente fazer +1 ao invés de +2 lá em cima nesse método por causa da compatibiliadde com o que já existia no dynetvis
+		}
+            
+            //Retira do array newresolucaoEmCadaTimestamp e do historicoConexoesSemColdStart os 'qtdInstantesPraTrocarResolucao' instantes iniciais. Esses primeiros elementos são necessários para começar o calculo da resolucao dinamica e nao podem influenciar as estatisticas.
+          /*  ArrayList<Integer> historicoConexoesSemColdStart = new ArrayList<Integer>(matrizGraphLineList.subList(qtdInstantesPraTrocarResolucao, matrizGraphLineList.size()));
+            ArrayList<Integer> historicoResolucoesSemColdStart = new ArrayList<Integer>(newresolucaoEmCadaTimestamp.subList(qtdInstantesPraTrocarResolucao, newresolucaoEmCadaTimestamp.size()));
+            
+            String valoresEstatisticosArquivo = "";
+            
+
+            valoresEstatisticosArquivo += "Media Conexoes da rede dentro da resolucao dinamica (sem Cold start) = " + String.format("%.2f", getMedia(historicoConexoesSemColdStart)) + "\r\n";
+            valoresEstatisticosArquivo += "Desvio Padrao Conexoes da rede dentro da resolucao dinamica (sem Cold start) = " + String.format("%.2f", getDesvioPadrao(historicoConexoesSemColdStart)) + "\r\n";
+            valoresEstatisticosArquivo += "Media Resolucoes calculadas dinamicamente (sem Cold start) = " + String.format("%.2f", getMedia(historicoResolucoesSemColdStart)) + "\r\n";
+            valoresEstatisticosArquivo += "Desvio Padrao Resolucoes calculadas dinamicamente = " + String.format("%.2f", getDesvioPadrao(historicoResolucoesSemColdStart)) + "\r\n";
+            valoresEstatisticosArquivo += "Mediana Resolucoes calculadas dinamicamente = " + String.format("%.2f", getMediana(historicoResolucoesSemColdStart)) + "\r\n";
+            valoresEstatisticosArquivo += "Moda Resolucoes calculadas dinamicamente = " + getModa(historicoResolucoesSemColdStart) + "\r\n \r\n";
+            valoresEstatisticosArquivo += "Origem   Destino InstResOriginal InstResDinamica ValorResolucao \r\n";
+            
+            System.out.println(valoresEstatisticosArquivo);
+            
+            util.FileHandler.gravaArquivo(valoresEstatisticosArquivo, "D:\\Resolucao Dinamica\\CenarioEstatico\\" + redeSendoTestadaStream + "\\" + nomeArquivo, true);
+             
+            util.FileHandler.gravaArquivo(gravarNoArquivo, "D:\\Resolucao Dinamica\\CenarioEstatico\\" + redeSendoTestadaStream + "\\" + nomeArquivo, true);
+             */
+            String valoresGraficoExcel = "Timestamp \t #Connections \t #Resolution\r\n";
+            
+            if(adaptiveResolution && edgeSampling.equals(""))
+            {
+                ArrayList<Integer> historicoConexoesSemColdStart = new ArrayList<Integer>(matrizGraphLineList.subList(windowSizeValue, matrizGraphLineList.size()));
+                ArrayList<Double> historicoResolucoesSemColdStartDouble = new ArrayList<>(newresolucaoEmCadaTimestamp.subList(windowSizeValue, newresolucaoEmCadaTimestamp.size()));
+                
+                ArrayList<Integer> historicoResolucoesSemColdStart = new ArrayList<>();
+
+                for(Double d : historicoResolucoesSemColdStartDouble) {
+                    historicoResolucoesSemColdStart.add(d.intValue());
+                }
+            /*
+                System.out.println("Media Conexoes da rede dentro da resolucao dinamica (sem Cold start, descartando os " + windowSizeValue + " primeiros instantes) = " + String.format("%.2f", getMedia(historicoConexoesSemColdStart)));
+                System.out.println("Desvio Padrão Conexoes da rede dentro da resolucao dinamica (sem Cold start, descartando os " + windowSizeValue + " primeiros instantes) = " + String.format("%.2f", getDesvioPadrao(historicoConexoesSemColdStart)));
+
+                System.out.println("Media Resolucoes calculadas dinamicamente (sem Cold start) = " + String.format("%.2f", getMedia(historicoResolucoesSemColdStart)));
+                System.out.println("Desvio Padrao Resolucoes calculadas dinamicamente = " + String.format("%.2f", getDesvioPadrao(historicoResolucoesSemColdStart)));
+
+                System.out.println("Mediana Resolucoes calculadas dinamicamente = " + String.format("%.2f", getMediana(historicoResolucoesSemColdStart)));
+                System.out.println("Moda Resolucoes calculadas dinamicamente = " + getModa(historicoResolucoesSemColdStart));
+            
+                for(int i = 0; i < matrizGraphLineList.size(); i++)
+                {
+                    valoresGraficoExcel += i + "\t" + matrizGraphLineList.get(i) + "\t" + newresolucaoEmCadaTimestamp.get(i) + "\r\n";
+                }
+                //util.FileHandler.gravaArquivo(valoresGraficoExcel, "D:\\Resolucao Dinamica\\CenarioEstatico\\" + redeSendoTestadaStream + "\\" + nomeArquivo, true);
+            */
+            }
+            //Stream edge sampling em rede estática: Dados para o linegraph
+            Object[] map = maintainedEdgesPerTimeStamp.values().toArray();
+            ArrayList<Double> qtdArestasEmCadaTimestamp = new ArrayList();
+
+            String qtdArestasPerTimestampSampling = "";
+            for(int x = 0; x <= timestampUltimaArestaPlotada;x++)
+            {
+                Double proporcaoArestaPerTime = Double.parseDouble(map[x].toString())/qtdArestasMantidasEdgeSamplingStream;
+                qtdArestasEmCadaTimestamp.add(proporcaoArestaPerTime);
+                qtdArestasPerTimestampSampling += map[x].toString() + "\r\n";
+            }
+          //      util.FileHandler.gravaArquivo(qtdArestasPerTimestampSampling, "F:\\qtdArestasPerTimestampSampling.txt", true);
+            
+            
+            return qtdArestasEmCadaTimestamp;
+
+        }
+        catch(Exception e)
+        {
+            e.printStackTrace();
+            return null;
+        }
+        finally
+        {
+            graph.getModel().endUpdate();
+            if(adaptiveResolution && edgeSampling.equals(""))
+            {
+                graphComponent = new mxGraphComponent(graph);
+                graph.setAllowDanglingEdges(false);
+                graph.setCellsEditable(false);
+                graph.setCellsDisconnectable(false);
+            //    graph.cellsOrdered(graph.getChildVertices(graph.getDefaultParent()), false); 
+                graph.setEdgeLabelsMovable(false);
+                
+                if(listAttNodes.isEmpty())
+                    getWeightEstruturalToInline(graphComponent);
+            }
+               
+                graphComponent.refresh();
+        }
+    }
+     
+    boolean removeuNosLaterais;
+    public void limpaLayoutQtdInstantesPlotadasSeForStreamAtingida(boolean removerNosLaterais, boolean removerTimestamps)
+    {
+        removeuNosLaterais = removerNosLaterais;
+        graph.getModel().beginUpdate();
+        for(Object vertice :graph.getChildVertices(graph.getDefaultParent()))
+        {
+             mxCell celula = (mxCell) vertice;
+             InlineNodeAttribute att = (InlineNodeAttribute) celula.getValue();
+
+             //Limpa instantes de tempo
+             if(celula.getId().contains("T") && removerTimestamps)
+             {
+                 att.setLabel("");
+             }
+             else if(att.isNode())//Deleta os nós e arestas do "miolo" do layout (exceto labels left e right e as linhas horizontais)
+             {
+                 graph.getModel().remove(celula);
+             }
+             else if(att.isEdge())
+             {
+                 graph.getModel().remove(celula);
+                 listAllEdges.remove(celula);
+             }
+             else if(att.isLineNode() && removerNosLaterais) //Se removerNosLaterais, remove os nós atuais e plota os topk
+             {
+                 graph.getModel().remove(celula);
+                 lineNodes.remove((Object)att.getId_original());
+             }
+        }
+        graph.getModel().endUpdate();
+    }
+    
+     
+    
+     static int somaResolucoesPassadas = 0, qtdResolucoesPassadas = 0;
+     public void calculaResolucaoDinamica()
+     {
+         int novaResolucao, novaResolucaoMP;
+     /*    
+         double numeradorMediaPonderada = 0;
+         double denominadorMediaPonderada = pesoPt1LineGraphStream + pesoPt2LineGraphStream + pesoPt3LineGraphStream + pesoPt4LineGraphStream;
+         double mediaPonderada;
+         
+         int linegraphUmQuartoSize = linegraphStream.length / 4;
+         
+         for(int i = 0; i < linegraphStream.length; i++)
+         {
+             if(0 <= i && i < linegraphUmQuartoSize)
+                 numeradorMediaPonderada += (linegraphStream[i] * pesoPt1LineGraphStream);
+             else if(linegraphUmQuartoSize <= i && i < 2*linegraphUmQuartoSize)
+                 numeradorMediaPonderada += (linegraphStream[i] * pesoPt2LineGraphStream);
+             else if(2*linegraphUmQuartoSize <= i && i < 3*linegraphUmQuartoSize)
+                 numeradorMediaPonderada += (linegraphStream[i] * pesoPt3LineGraphStream);
+             else
+                 numeradorMediaPonderada += (linegraphStream[i] * pesoPt4LineGraphStream);
+         }
+         mediaPonderada = numeradorMediaPonderada / denominadorMediaPonderada;
+         
+         novaResolucaoMP = (int) Math.floor(pesoResolucaoAnteriorNaNova * resolucaoAnteriorStreamMP + ((1 - pesoResolucaoAnteriorNaNova) * (1/mediaPonderada)));
+         if(novaResolucaoMP == 0)
+             novaResolucaoMP = 1;
+          resolucaoAnteriorStreamMP = novaResolucaoMP;
+         */
+        
+         double totalConexoesNoIntervalo = 0;
+         double qtdInstantesComConexao = 0;
+         for(Integer qtdConexoesNoInstante : linegraphStream)
+         {
+             if(qtdConexoesNoInstante != 0)
+             {
+                totalConexoesNoIntervalo += qtdConexoesNoInstante;
+                qtdInstantesComConexao += 1;
+             }
+         }
+         
+         //Média de conexões
+      //   totalConexoesNoIntervalo = qtdInstantesComConexao/totalConexoesNoIntervalo;
+             totalConexoesNoIntervalo = qtdInstantesComConexao;
+         double fadingSum = fadingSumFactor(linegraphStream.length-1, totalConexoesNoIntervalo);
+         
+         resolucaoAnteriorStream = resolucaoAtualStream;
+         
+         somaResolucoesPassadas += resolucaoAnteriorStream;
+         double mediaResolucoesPassadas = (double) somaResolucoesPassadas / ++qtdResolucoesPassadas;
+         
+         
+         resolucaoAtualStream = (int) Math.floor(pesoResolucaoAnteriorNaNova * resolucaoAtualStream + ((1 - pesoResolucaoAnteriorNaNova) * fadingSum));
+         //resolucaoAtualStream = 9;
+         //if(resolucaoAtualStream == 0)
+             //resolucaoAtualStream = 1;
+             
+         if(resolucaoAtualStream == 0) //Ao invés de só setar 1, define a nova resolução como a média das anteriores. O cálculo é stream fashion (baseado em https://www.geeksforgeeks.org/average-of-a-stream-of-numbers/)
+         {
+             resolucaoAtualStream = (int) Math.floor(mediaResolucoesPassadas);
+             System.out.println("Media");
+             if(resolucaoAtualStream == 0)
+                resolucaoAtualStream = 1;
+         }
+         else if(resolucaoAtualStream > windowSizeValue) //Se eu troco de resolucao a cada 50 instantes, uma aresta nao pode representar mais de 50.
+             resolucaoAtualStream = windowSizeValue;
+         
+         //Reseta vetor pra calcular pro intervalo seguinte
+         for(int i = 0; i < linegraphStream.length; i++)
+         {
+             linegraphStream[i] = 0;
+         }
+        
+     }
+     
+     private double fadingSumFactor(int instante, double totalConexoesNoIntervalo)
+     {
+         if(instante == 0)
+             return (double) linegraphStream[instante]/totalConexoesNoIntervalo;
+         return (double)linegraphStream[instante]/totalConexoesNoIntervalo + fadingFactor * fadingSumFactor(instante -1, totalConexoesNoIntervalo);
+     }
+     
+     int primeiroTimestampPlotadoStream = 0;
+     
+     String estilosb = new StringBuilder().append(mxConstants.STYLE_SHAPE).append("="+mxConstants.SHAPE_RECTANGLE+";")
+                        .append(mxConstants.STYLE_NOLABEL).append("=0;")
+                        .append(mxConstants.STYLE_RESIZABLE).append("=0;")
+                        .append(mxConstants.STYLE_OPACITY).append("=100;")
+                        .append(mxConstants.STYLE_VERTICAL_LABEL_POSITION).append("="+mxConstants.ALIGN_MIDDLE+";")
+                        .append(mxConstants.STYLE_FONTCOLOR).append("=red;")
+                        .append(mxConstants.STYLE_FILLCOLOR).append("=red;")
+                        .append(mxConstants.STYLE_STROKECOLOR).append("=red;")
+                        .append(mxConstants.STYLE_MOVABLE).append("=1;")
+                        .append(mxConstants.STYLE_INDICATOR_HEIGHT).append("=1;").toString();
+                        
+                        
+     
+     
+     private void insereArestaNoLayout(int idSource, int idTarget, int tempo, List<Integer> posicaoAtualNosLayout)
+     {
+         // graph.getModel().beginUpdate();
+        //Se o stream é só de arestas, os nós com ctz estão em lineNodes
+         
+                /*ArrayList<Integer> novosNos = new ArrayList<>();
+                if(!lineNodes.contains(idSource)){
+                    novosNos.add(idSource);
+                    lineNodes.add(idSource);
+                }
+                if(!lineNodes.contains(idTarget)){
+                    novosNos.add(idTarget);
+                    lineNodes.add(idTarget);
+                } */
+         
+                //Se a aresta já foi desenhada, não desenha de novo.
+                //Isso é útil na resolução. Ex: Res = 2. Se já desenhou a aresta (A,B,0), não precisa desenhar a (A,B,1)
+                mxCell edgeExiste = (mxCell) ((mxGraphModel)graph.getModel()).getCell(tempo+" "+idSource+" "+idTarget);
+                if(edgeExiste != null)
+                    return;
+                
+            //    util.FileHandler.gravaArquivo(idSource + " " + idTarget + " " + tempo + "\r\n", "F:\\redeAposStreamLouvain.txt", true);
+        
+         
+                int[] posicoes = getPosicoesNos(idSource, idTarget, posicaoAtualNosLayout);
+                int indexSource = posicoes[0];
+                int indexTarget = posicoes[1];
+                
+             //   int indexSource = lineNodes.indexOf(idSource);
+             //   int indexTarget = lineNodes.indexOf(idTarget);
+                
+                //Edge
+                String styleShapeInline = styleShapeEdge+mxConstants.STYLE_ENDARROW+"=0;strokeColor=none;fillColor=#C3D9FF;"+mxConstants.STYLE_GRADIENTCOLOR+"=#C3D9FF;";
+                //String styleShapeInline = styleShapeEdge+mxConstants.STYLE_ENDARROW+"=0;strokeColor=none;fillColor=" + corResolucao + ";" + mxConstants.STYLE_GRADIENTCOLOR+ (corResolucao.equals("#000080") ? "#9999ff" : "#ff8080");
+                
+
+                boolean isNorth = false;
+                
+                int y_inicial;
+                if(indexSource < indexTarget)
+                {
+                    y_inicial = indexSource;
+                    styleShapeInline += mxConstants.STYLE_GRADIENT_DIRECTION+"="+mxConstants.DIRECTION_NORTH+";";
+                    isNorth = true;
+                }
+                else
+                {
+                    y_inicial = indexTarget;
+                    styleShapeInline += mxConstants.STYLE_GRADIENT_DIRECTION+"="+mxConstants.DIRECTION_SOUTH+";";
+                }
+                
+               if(showEdgesStream)
+               {
+                   if(lineNodesSelecionadosStream != null && lineNodesSelecionadosStream.size() > 0)
+                   {
+                       //Exibe apenas as arestas dos nós destacados.
+                       if(lineNodesSelecionadosStream.contains(idSource + "") && lineNodesSelecionadosStream.contains(idTarget + ""))
+                       {
+                           styleShapeInline = styleShapeInline.replace(mxConstants.STYLE_OPACITY+"=0;",mxConstants.STYLE_OPACITY+"=25;");
+                       }
+                       else 
+                       {
+                           styleShapeInline = styleShapeInline.replace(mxConstants.STYLE_OPACITY+"=25;",mxConstants.STYLE_OPACITY+"=0;");
+                           styleShapeInline = styleShapeInline.replace(mxConstants.STYLE_OPACITY+"=100;",mxConstants.STYLE_OPACITY+"=0;");
+                       }
+                       
+                   }
+                   else //Se não houver seleção de nós, exibe todas as arestas
+                    styleShapeInline = styleShapeInline.replace(mxConstants.STYLE_OPACITY+"=0;",mxConstants.STYLE_OPACITY+"=25;");
+               } //Se não for pra exibir as arestas, oculta.
+               else
+               {
+                   styleShapeInline = styleShapeInline.replace(mxConstants.STYLE_OPACITY+"=25;",mxConstants.STYLE_OPACITY+"=0;");
+                   styleShapeInline = styleShapeInline.replace(mxConstants.STYLE_OPACITY+"=100;",mxConstants.STYLE_OPACITY+"=0;");
+               }
+                
+                InlineNodeAttribute attEdge = new InlineNodeAttribute(tempo,indexSource,tempo - primeiroTimestampPlotadoStream,y_inicial,"",false,false,false);
+                attEdge.setIsEdge(true,idSource,idTarget,Math.abs((zoom* (indexTarget+1+deslocamento) + 20) - (zoom* (indexSource+1+deslocamento) + 20)),isNorth);
+            //    graph.getModel().beginUpdate();
+                Object edge = graph.insertVertex(null, tempo+" "+idSource+" "+idTarget, attEdge , spacing*zoom* (attEdge.getX_atual()+deslocamento)+shiftX, (zoom* (y_inicial+1+deslocamento) + 20) +4, sizeEdgeTemporalInline, Math.abs((zoom* (indexTarget+1+deslocamento) + 20) - (zoom* (indexSource+1+deslocamento) + 20)) , styleShapeInline);
+            //    graph.getModel().endUpdate();
+                listAllEdges.add(edge);
+                
+           
+                
+                final Object parent = graph.getDefaultParent();
+
+                //Source node dentro do layout
+                String estiloNoInterno = styleShape+style.mxStyle;
+                String estiloNoV1 = estiloNoInterno;
+                String estiloNoV2 = estiloNoInterno;
+                if(this.showNodes)
+                {
+                    if(exibirNivelAtividadeNos)
+                    {
+                        
+                        String estilo = estilosb;
+                        estiloNoInterno = estilo;
+                        estiloNoV1 = estilo;
+                        estiloNoV2 = estilo;
+                        
+                    }
+                    else
+                    {
+                        //estiloNoInterno = estiloNoInterno.replaceAll("fillColor=[^;]*;","fillColor=" + corResolucao + ";");
+                        //estiloNoInterno = estiloNoInterno.replaceAll("gradientColor=[^;]*;","gradientColor="+ corResolucao + ";");
+                        estiloNoInterno += "fillColor=" + (corResolucao.equals("#000080") ? "#9999ff" : "#ff8080") + ";";
+                        estiloNoInterno += "gradientColor=" + (corResolucao.equals("#000080") ? "#9999ff" : "#ff8080") + ";";
+                    
+                        estiloNoInterno = estiloNoInterno.replace(mxConstants.STYLE_OPACITY+"=0;",mxConstants.STYLE_OPACITY+"=100;");
+                        
+                        estiloNoV1 = estiloNoInterno;
+                        estiloNoV2 = estiloNoInterno;
+                        
+                        
+                    }
+                    if(lineNodesSelecionadosStream != null && lineNodesSelecionadosStream.size() > 0)
+                    {
+                        //Exibe apenas as arestas dos nós destacados.
+                        if(!lineNodesSelecionadosStream.contains(idSource + ""))
+                             estiloNoV1 = estiloNoInterno.replace(mxConstants.STYLE_OPACITY+"=100;",mxConstants.STYLE_OPACITY+"=10;");
+                        
+                        if(!lineNodesSelecionadosStream.contains(idTarget + ""))
+                             estiloNoV2 = estiloNoInterno.replace(mxConstants.STYLE_OPACITY+"=100;",mxConstants.STYLE_OPACITY+"=10;");
+                    }
+                    
+                }
+                else
+                {
+                    estiloNoV1 = estiloNoInterno.replace(mxConstants.STYLE_OPACITY+"=100;",mxConstants.STYLE_OPACITY+"=0;");
+                    estiloNoV2 = estiloNoV1;
+                }
+                
+                mxCell v1 = (mxCell) ((mxGraphModel)graph.getModel()).getCell(idSource+" "+tempo);
+                if(v1 == null)
+                {
+                    
+                    indexSource++;
+                    InlineNodeAttribute att = new InlineNodeAttribute(tempo,idSource,tempo - primeiroTimestampPlotadoStream,indexSource,"",false,false,true);
+                    att.setWeightInTime(1);
+					//Nós dentro do layout					   
+                    //v1 = (mxCell) graph.insertVertex(parent, idSource+" "+tempo, att , spacing*zoom* (att.getX_atual()+deslocamento)+shiftX , zoom* (indexSource+deslocamento) + 20, 10,10, styleShape+style.mxStyle);
+                    
+                //    graph.getModel().beginUpdate();
+                      v1 = (mxCell) graph.insertVertex(parent, idSource+" "+tempo, att , spacing*zoom* ((att.getX_atual())+deslocamento)+shiftX, zoom* (indexSource+deslocamento) + 20, 10,10, estiloNoV1);
+                      
+                      if(exibirNivelAtividadeNos)
+                      {
+                        mxGeometry g = (mxGeometry) v1.getGeometry().clone();
+                        g.setHeight(4.1);
+                        g.setWidth(4.5);
+                        v1.setGeometry(g);
+                      }
+                    
+                //      graph.getModel().endUpdate();
+                //    matrizGraphLine[tempo] = matrizGraphLine[tempo]+1;
+                            
+
+                }
+                else
+                {
+                    InlineNodeAttribute att = (InlineNodeAttribute) v1.getValue();
+                    att.setWeightInTime(att.getWeightInTime()+1);
+                //    matrizGraphLine[tempo] = matrizGraphLine[tempo]+1;
+                }
+                
+                //Target node dentro do layout
+                mxCell v2 = (mxCell) ((mxGraphModel)graph.getModel()).getCell(idTarget+" "+tempo);
+                if(v2 == null)
+                {
+                    
+                    indexTarget++;
+                    InlineNodeAttribute att = new InlineNodeAttribute(tempo,idTarget,tempo - primeiroTimestampPlotadoStream,indexTarget,"",false,false,true);
+                    att.setWeightInTime(1);
+                //    graph.getModel().beginUpdate();
+                    v2 = (mxCell) graph.insertVertex(parent, idTarget+" "+tempo, att , spacing*zoom* ((att.getX_atual())+deslocamento)+shiftX , zoom* (indexTarget+deslocamento) + 20, 10,10, estiloNoV2);
+                    if(exibirNivelAtividadeNos)
+                      {
+                        mxGeometry g = (mxGeometry) v2.getGeometry().clone();
+                        g.setHeight(4.1);
+                        g.setWidth(4.5);
+                        v2.setGeometry(g);
+                      }
+                //    graph.getModel().endUpdate();
+                }
+                else
+                {
+                    InlineNodeAttribute att = (InlineNodeAttribute) v2.getValue();
+                    att.setWeightInTime(att.getWeightInTime()+1);
+                //    matrizGraphLine[tempo] = matrizGraphLine[tempo]+1;
+                }
+
+                    if(resolucaoDinamicaRedeEstatica)
+                        matrizGraphLine[tempo] = matrizGraphLine[tempo]+2; //Soma dois no linegraph (dois nós) a cada aresta.
+                
+            //    graph.getModel().endUpdate();  
+                        
+
+     }
+     
+    
+    
+     private void updateListEdgesJgraphAfterSampling()
+     {
+         ArrayList copialistEdgesJgraph = new ArrayList();
+         boolean acheiAresta = false;
+                  
+         for(int y = 0; y < listAllEdges.size(); y++)
+        {
+            acheiAresta = false;
+            mxCell cell = (mxCell) listAllEdges.get(y);
+            InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+            if(att.isEdge())
+            {
+                int origin = att.getOrigin();
+                int destiny = att.getDestiny();
+                int tempo = att.getTime();
+
+
+                for(mxCell ed : listEdgesJgraph)
+                {
+                    CustomAttributes att1 = (CustomAttributes) ed.getValue();
+                    
+
+                    if(ed.getTarget().getId().equals(destiny + "") && ed.getSource().getId().equals(origin + ""))
+                    {
+                        ArrayList<Integer> times = att1.getTime();
+                         for(Integer timeI : times)
+                         {
+                             if(timeI == tempo)
+                             {
+                                 try 
+                                 {
+                                    mxCell edCopia = (mxCell) ed.clone();
+                                    edCopia.setParent(ed.getParent());
+                                    edCopia.setSource(ed.getSource());
+                                    edCopia.setTarget(ed.getTarget());
+                                    
+                                    CustomAttributes att2 = new CustomAttributes(tempo, 1, "", true, false);
+                                    edCopia.setValue(att2);
+                                    copialistEdgesJgraph.add(edCopia);
+                                    
+                                    acheiAresta = true;
+                                    break;
+                                    
+                                    
+                                 } catch (CloneNotSupportedException ex) {
+                                     Logger.getLogger(NetLayoutInlineNew.class.getName()).log(Level.SEVERE, null, ex);
+                                 }
+                                 
+                                 
+                             }
+                         }
+                         if(acheiAresta)
+                             break;
+                    }
+                }
+            }
+        }
+
+         listEdgesJgraph = new ArrayList();
+         listEdgesJgraph.addAll(copialistEdgesJgraph);
+     }
     private boolean listAttNodesLocalJaTemNo(ArrayList<InlineNodeAttribute> listAttNodesLocal, int idNo)
     {
         for(InlineNodeAttribute attNo : listAttNodesLocal)
@@ -4255,11 +5914,12 @@ public class NetLayoutInlineNew extends NetLayout {
         {
             String[] communitiesColors = new String[100000];
             
-            String[] colorsTable = new String[100];
-            String[] colorsLabel = new String[100];
+            String[] colorsTable = new String[1000];
+            String[] colorsLabel = new String[1000];
 
             JFileChooser openDialog = new JFileChooser();
             String filename = "";
+            filename = f.getPathDataset();
 
             openDialog.setMultiSelectionEnabled(false);
             openDialog.setDialogTitle("Open file");
@@ -4501,6 +6161,8 @@ public class NetLayoutInlineNew extends NetLayout {
             }
 
         }
+        graphComponentScalarInline.getGraph().repaint();
+        graphComponentScalarInline.getGraph().refresh();
      }
      
      
@@ -4522,7 +6184,7 @@ public class NetLayoutInlineNew extends NetLayout {
                     return retorno;
             }
          }
-         else
+         else if(listAttNodes.size() != 0)
          {
               for(int i = 0; i < listAttNodes.size(); i++)
                 {
@@ -4535,6 +6197,11 @@ public class NetLayoutInlineNew extends NetLayout {
                     if(retorno[0] != -1 && retorno[1] != -1)
                         return retorno;
                 }
+         }
+		 else //usado no adaptive resolution
+         {
+             retorno[0] = lineNodes.indexOf(idSource);
+             retorno[1] = lineNodes.indexOf(idTarget);
          }
          return retorno;
      }
@@ -4611,6 +6278,7 @@ public class NetLayoutInlineNew extends NetLayout {
         }
     }
     
+    @Deprecated
     public void changeSpaceLinesFile(){
         
         Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
@@ -4664,7 +6332,7 @@ public class NetLayoutInlineNew extends NetLayout {
                     //att.setHeightEdge_atual(att.getHeightEdge_atual()*spaceBetweenLines);
                     g.setHeight(att.getHeightEdge_atual()*spaceBetweenLines); 
                     cell.setGeometry(g);
-                    graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX ,zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 24);
+                    graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX - moveEdgeSizeX,  (zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35)+15*spaceBetweenLines );
                 }
             }
         }
@@ -4729,7 +6397,7 @@ public class NetLayoutInlineNew extends NetLayout {
     
     
     
-    final public void changeSizeNodeInline(){
+    final public void changeSizeNodeInline(int nodeSize){
         if(getSizeNode().equals("Small")){
             Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
             graph.getModel().beginUpdate();
@@ -4745,6 +6413,7 @@ public class NetLayoutInlineNew extends NetLayout {
                     g.setHeight(10);
                     g.setWidth(10);
                     cell.setGeometry(g);
+                    
                 }
             }
         }
@@ -4767,6 +6436,50 @@ public class NetLayoutInlineNew extends NetLayout {
                 }
             }
         }
+        else
+        {
+            Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
+            graph.getModel().beginUpdate();
+            for (Object root1 : roots) {
+                Object[] root = {root1};
+                mxCell cell = (mxCell) root1;
+                String idCell = cell.getId();
+                InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+                if(att.isNode() )
+                {
+                    mxGeometry g = (mxGeometry) cell.getGeometry().clone();
+                    g.setHeight(nodeSize);
+                    g.setWidth(nodeSize);
+                    cell.setGeometry(g);
+                    
+                    //Reposiciona o nó em cima da linha por causa do tamanho, subtrai o Y pela metade do tamanho
+                    graph.moveCells(root, -cell.getGeometry().getX() , -cell.getGeometry().getY());
+                
+                    graph.moveCells(root, spacing*zoom* (att.getX_atual()+deslocamento)+shiftX -2.5 , zoom* (att.getY_atual() * deslocamento * spaceBetweenLines) + 35-(Integer.parseInt(nodeSize+"")/2));
+                }
+            }
+        }
+        graph.getModel().endUpdate();
+    }
+    
+    
+    final public void changeSizeEdgeInline(int edgeSize){
+
+        Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
+        graph.getModel().beginUpdate();
+        for (Object root1 : roots) {
+            Object[] root = {root1};
+            mxCell cell = (mxCell) root1;
+            String idCell = cell.getId();
+            InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+            if(att.isEdge())
+            {
+                mxGeometry g = (mxGeometry) cell.getGeometry().clone();
+                g.setWidth(edgeSize);
+                cell.setGeometry(g);
+            }
+        }
+        graph.getModel().endUpdate();
     }
     
     public Color firstColor;
@@ -4885,17 +6598,6 @@ public class NetLayoutInlineNew extends NetLayout {
 
                     graph.setCellStyle(styleShape+style.mxStyle, root);
 
-                    mxGeometry g = (mxGeometry) cell.getGeometry().clone();
-                    if(getSizeNode().equals("Small")){
-                        g.setHeight(10);
-                        g.setWidth(10);
-                    }
-                    else{
-                        g.setHeight(15);
-                        g.setWidth(15);
-                    }
-                    
-                    cell.setGeometry(g);
                 }
             }
             graph.getModel().endUpdate();
@@ -4938,17 +6640,6 @@ public class NetLayoutInlineNew extends NetLayout {
 
                     graph.setCellStyle(styleNode+style.mxStyle, root);
 
-                    mxGeometry ge = (mxGeometry) cell.getGeometry().clone();
-                    if(getSizeNode().equals("Small")){
-                        ge.setHeight(10);
-                        ge.setWidth(10);
-                    }
-                    else{
-                        ge.setHeight(15);
-                        ge.setWidth(15);
-                    }
-                    
-                    cell.setGeometry(ge);
                 }
             }
             graph.getModel().endUpdate();
@@ -5046,17 +6737,6 @@ public class NetLayoutInlineNew extends NetLayout {
 
                     graph.setCellStyle(styleNode+style.mxStyle, root);
 
-                    mxGeometry ge = (mxGeometry) cell.getGeometry().clone();
-                    if(getSizeNode().equals("Small")){
-                        ge.setHeight(10);
-                        ge.setWidth(10);
-                    }
-                    else{
-                        ge.setHeight(15);
-                        ge.setWidth(15);
-                    }
-                    
-                    cell.setGeometry(ge);
                 }
             }
             graph.getModel().endUpdate();
@@ -5115,11 +6795,12 @@ public class NetLayoutInlineNew extends NetLayout {
         {
             String[] communitiesColors = new String[100000];
             
-            String[] colorsTable = new String[100];
-            String[] colorsLabel = new String[100];
+            String[] colorsTable = new String[1000];
+            String[] colorsLabel = new String[1000];
 
             JFileChooser openDialog = new JFileChooser();
             String filename = "";
+            filename = f.getPathDataset();
 
             openDialog.setMultiSelectionEnabled(false);
             openDialog.setDialogTitle("Open file");
@@ -5159,8 +6840,25 @@ public class NetLayoutInlineNew extends NetLayout {
                         colorsTable[8] = "148 000 211"; //purple
                         colorsTable[9] = "000 255 255"; //cyan
                         colorsTable[10] = "000 000 000"; //Black
+                        
+
 
                         /*
+                        
+                        colorsTable[0] = "255 000 255"; //pink
+                        colorsTable[1] = "000 000 255"; //blue
+                        colorsTable[5] = "000 255 000"; //green
+                        colorsTable[2] = "255 000 000"; //red
+                        colorsTable[3] = "255 185 60"; //orange
+                        colorsTable[4] = "255 255 000"; //yellow
+
+                        colorsTable[6] = "100 070 000"; //brown
+                        colorsTable[7] = "205 092 092"; //light pink
+                        colorsTable[8] = "148 000 211"; //purple
+                        colorsTable[9] = "000 255 255"; //cyan
+
+                        
+                        
                         colorsTable[10] = "000 000 000"; //Black
                         colorsTable[11] = "064 224 208"; //Turquoise
                         colorsTable[12] = "000 128 128"; //Teal
@@ -5321,18 +7019,313 @@ public class NetLayoutInlineNew extends NetLayout {
                             styleNode += mxConstants.STYLE_RESIZABLE+"=0;";
                             styleNode += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_ELLIPSE+";";
                                                     int weightNode = att.getWeightInTime();
-                            float opacity = (int) (weightNode * (maxOpacity - minOpacity) / (vMax - vMin)) + minOpacity;
+                            float opacity2 = (int) (weightNode * (maxOpacity - minOpacity) / (vMax - vMin)) + minOpacity;
 
+                            int opacity = (int) opacity2;
+                            
                             if(getColorInline().equals("Metadata File"))
                                 opacity = 100;
 
                             styleNode += mxConstants.STYLE_OPACITY+"="+opacity+";";
-                                                    if(showInstanceWeight)
+                            if(showInstanceWeight)
                                 styleNode += mxConstants.STYLE_NOLABEL+"=0;";
                             else
                                 styleNode += mxConstants.STYLE_NOLABEL+"=1;";
 
                             graph.setCellStyle(styleNode, root);
+                        }
+                    }
+
+                    graph.getModel().endUpdate();
+
+
+
+                     //Scalar Nodes
+                    boolean firstBool = true;
+                    String first = "";
+
+                    int communityColorId = 0;
+
+                    roots = graphComponentScalarInline.getGraph().getChildCells(graphComponentScalarInline.getGraph().getDefaultParent(), true, false);
+                    graphComponentScalarInline.getGraph().getModel().beginUpdate();
+                    for (Object root1 : roots) {
+                        Object[] root = {root1};
+                        mxCell cell = (mxCell) root1;
+
+                        int r = 0;
+                        int g = 0;
+                        int b = 0;
+
+                        String color2 = colorsTable[communityColorId];
+                        tokens = color2.split(" ");
+                        r = Integer.parseInt(tokens[0]);
+                        g = Integer.parseInt(tokens[1]);
+                        b = Integer.parseInt(tokens[2]);
+
+                        String label = "";
+                        if(communityColorId < 10)
+                            label = colorsLabel[communityColorId];
+
+                        communityColorId++;
+                        Color colorNode = new Color(r,g,b);
+                        String hexColor = "#"+Integer.toHexString(colorNode.getRGB()).substring(2);
+
+                        //cell.setId(hexColor);
+
+                        String styleNode = "";
+
+                        styleNode +=  mxConstants.STYLE_FILLCOLOR+"="+hexColor+";";
+                        styleNode +=  mxConstants.STYLE_STROKECOLOR+"="+hexColor+";";
+
+                        styleNode += mxConstants.STYLE_MOVABLE+"=0;";
+                        styleNode += mxConstants.STYLE_EDITABLE+"=0;";
+                        styleNode += mxConstants.STYLE_RESIZABLE+"=0;";
+                        styleNode += mxConstants.STYLE_NOLABEL+"=0;";
+
+                        Color corEmNegativo = new Color(255 - colorNode.getRed(), 255 - colorNode.getGreen(), 255 - colorNode.getBlue());
+                        String hexColorNegative = "#"+Integer.toHexString(corEmNegativo.getRGB()).substring(2);
+
+                        styleNode +=  mxConstants.STYLE_FONTCOLOR+"="+hexColorNegative+";";
+                        cell.setValue(label);
+                        styleNode += mxConstants.STYLE_FONTSIZE+"=10;";
+                        styleNode += mxConstants.STYLE_FONTSTYLE+"="+mxConstants.FONT_BOLD+";";
+                        styleNode += mxConstants.STYLE_LABEL_POSITION+"="+mxConstants.ALIGN_CENTER+";";
+                        styleNode += mxConstants.STYLE_VERTICAL_LABEL_POSITION+"="+mxConstants.ALIGN_CENTER+";";
+                        styleNode += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_RECTANGLE+";";
+                        styleNode += mxConstants.STYLE_OPACITY+"=100;";
+
+                        graphComponentScalarInline.getGraph().setCellStyle(styleNode, root);
+                    }
+                    graphComponentScalarInline.getGraph().getModel().endUpdate();
+
+                    }
+                }catch (FileNotFoundException ex) {
+                    Logger.getLogger(OpenDataSetDialog.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (IOException ex) {
+                    Logger.getLogger(OpenDataSetDialog.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            
+            }
+        }
+		else if(getColorInline().equals("Adaptive Res."))
+        {
+
+            //Obtem lista de resoluções
+            ArrayList<String> resolucoesTimestamps = new ArrayList<>(); 
+            String resolucaoAnterior = "";
+            for(Object vertice : graph.getChildVertices(graph.getDefaultParent()))
+            {
+                mxCell celula = (mxCell) vertice;
+                InlineNodeAttribute att = (InlineNodeAttribute) celula.getValue();
+				//Limpa instantes de tempo
+                if(celula.getId().contains("T"))
+                {
+                    String[] tempo = att.getLabel().split(" - ");
+//                   String corAnterior = corResolucao;
+					if(!tempo[1].equals(resolucaoAnterior))
+                        corResolucao = corResolucao.equals("#ff8080") ? "#9999ff" : "#ff8080";
+                    
+                    resolucoesTimestamps.add(Integer.parseInt(tempo[0]), tempo[1] + ";" + corResolucao);
+                    resolucaoAnterior = tempo[1];
+                }
+            }
+            
+            //Muda cor de acordo com resolução
+            Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
+            graph.getModel().beginUpdate();
+            for (Object root1 : roots) {
+                Object[] root = {root1};
+                mxCell cell = (mxCell) root1;
+                String idCell = cell.getId();
+                InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+                if(att.isNode() )
+                {
+                    int timestamp = att.getTime();
+                    JGraphStyle style = NetLayoutInlineNew.JGraphStyle.ROUNDED;
+
+
+
+                    String styleNode =  mxConstants.STYLE_FILLCOLOR+"="+ resolucoesTimestamps.get(timestamp).split(";")[1] + ";";
+                    //styleNode +=  mxConstants.STYLE_STROKECOLOR+"="+ resolucoesTimestamps.get(timestamp).split(";")[1] + ";";
+                    styleNode += mxConstants.STYLE_NOLABEL+"=1;";
+
+
+                    styleNode += mxConstants.STYLE_RESIZABLE+"=0;";
+                    styleNode += mxConstants.STYLE_OPACITY+"=100;";
+                    
+                    if(formNode.equals("Circular"))
+                        styleNode += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_ELLIPSE+";";
+                    else if(formNode.equals("Square"))
+                        styleNode += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_RECTANGLE+";";
+
+                    graph.setCellStyle(styleNode+style.mxStyle, root);
+
+                    mxGeometry ge = (mxGeometry) cell.getGeometry().clone();
+                    if(getSizeNode().equals("Small")){
+                        ge.setHeight(10);
+                        ge.setWidth(10);
+                    }
+
+
+                    else{
+                        ge.setHeight(15);
+                        ge.setWidth(15);
+                    }
+                    
+                    cell.setGeometry(ge);
+                }
+
+            }
+            graph.getModel().endUpdate();
+        }
+		
+        else if(getColorInline().equals("Mtd with time File"))
+        {
+            HashMap<String, String> communitiesColors = new HashMap(); // Chave: nó + tempo, valor: cor
+            
+            String[] colorsTable = new String[100];
+            String[] colorsLabel = new String[100];
+
+            JFileChooser openDialog = new JFileChooser();
+            String filename = "";
+            filename = f.getPathDataset();
+
+            openDialog.setMultiSelectionEnabled(false);
+            openDialog.setDialogTitle("Open file");
+
+            openDialog.setSelectedFile(new File(filename));
+            openDialog.setCurrentDirectory(new File(filename));
+
+            int contColorsLabel = 0;
+            
+            
+            int result = openDialog.showOpenDialog(openDialog);
+            if (result == JFileChooser.APPROVE_OPTION) {
+                filename = openDialog.getSelectedFile().getAbsolutePath();
+                openDialog.setSelectedFile(new File(""));
+                BufferedReader file;
+                try {
+                    file = new BufferedReader(new FileReader(new File(filename)));
+                    String line = file.readLine();
+                    String[] tokens = line.split(" ");
+                    
+                    if(tokens.length != 3)
+                    {
+                        JOptionPane.showMessageDialog(null,"File format different from the expected. Check the Information button for details.","Error",JOptionPane.ERROR_MESSAGE);
+                    }
+                    else
+                    {
+                        String tmp, strLine = "";
+
+                        colorsTable[0] = "255 000 000"; //red
+                        colorsTable[1] = "000 000 255"; //blue
+                        colorsTable[2] = "000 255 000"; //green
+                        colorsTable[3] = "255 185 60"; //orange
+                        colorsTable[4] = "000 255 255"; //cyan
+                        colorsTable[5] = "255 000 255"; //pink
+                        colorsTable[6] = "100 070 000"; //brown
+                        colorsTable[7] = "205 092 092"; //light pink
+                        colorsTable[8] = "148 000 211"; //purple
+                        colorsTable[9] = "255 255 000"; //yellow
+                        colorsTable[10] = "000 000 000"; //black
+            
+                        for(int i = 11; i < colorsTable.length;i++)
+                        {
+                            colorsTable[i] = "000 000 000";//black
+                        }
+
+                        int cont= 0;
+
+                        communitiesColors.put(tokens[0]+" "+tokens[1], colorsTable[cont]);
+                        colorsLabel[0] = tokens[2];
+
+                        while ((tmp = file.readLine()) != null)
+                        {
+
+                            strLine = tmp;
+                            String[] tokens2 = strLine.split(" ");
+                            if(!tokens[2].equals(tokens2[2]))
+                            {
+                                tokens[2] = tokens2[2];
+                                cont++;
+                                colorsLabel[cont] = tokens2[2];
+                            }
+                            communitiesColors.put(tokens2[0]+" "+tokens2[1], colorsTable[cont]);
+                        }
+
+
+
+
+                    //All other nodes
+                    Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
+                    graph.getModel().beginUpdate();
+
+                    mxCell firstNode = (mxCell) roots[0];
+                                    InlineNodeAttribute attFirstNode = (InlineNodeAttribute) firstNode.getValue();
+
+                    float vMax = Float.parseFloat(attFirstNode.getWeightInTime()+"");
+                    float vMin = Float.parseFloat(attFirstNode.getWeightInTime()+"");
+                    float maxOpacity = 100;
+                    float minOpacity = 10;
+
+                    for (Object root1 : roots) {
+                        Object[] root = {root1};
+                        mxCell cell = (mxCell) root1;
+                        String idCell = cell.getId();
+                        String[] parts = idCell.split(" ");
+                        InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+
+                        if(att.isNode())
+                        {
+                            int weightNode = att.getWeightInTime();
+                            if(weightNode > vMax)
+                                vMax = weightNode;
+                            if(weightNode < vMin)
+                                vMin = weightNode;
+
+                        }
+                    }
+
+
+                    for (Object root1 : roots) {
+                        Object[] root = {root1};
+                        mxCell cell = (mxCell) root1;
+                        InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+
+                        if(att.isNode())
+                        {
+
+                            int r = 0;
+                            int g = 0;
+                            int b = 0;
+                            if(communitiesColors.get(att.getId_original()+" "+att.getTime()) != null)
+                            {
+                                String color2 = communitiesColors.get(att.getId_original()+" "+att.getTime());
+                                tokens = color2.split(" ");
+                                r = Integer.parseInt(tokens[0]);
+                                g = Integer.parseInt(tokens[1]);
+                                b = Integer.parseInt(tokens[2]);
+                            }
+                            Color colorNode = new Color(r,g,b);
+                            String hexColor = "#"+Integer.toHexString(colorNode.getRGB()).substring(2);
+
+                            //Map<String,Object> styleNodeMap = graph.getCellStyle(root);
+                              
+                            String styleNode =  mxConstants.STYLE_FILLCOLOR+"="+hexColor+";";
+                            styleNode +=  mxConstants.STYLE_STROKECOLOR+"="+hexColor+";";
+                            styleNode += mxConstants.STYLE_EDITABLE+"=0;";
+                            styleNode += mxConstants.STYLE_RESIZABLE+"=0;";
+                            styleNode += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_ELLIPSE+";";
+                            styleNode += mxConstants.STYLE_OPACITY+"=100;";
+
+                            if(showInstanceWeight)
+                                styleNode += mxConstants.STYLE_NOLABEL+"=0;";
+                            else
+                                styleNode += mxConstants.STYLE_NOLABEL+"=1;";
+                            
+                            
+                            graph.setCellStyle(styleNode, root);
+ 
                         }
                     }
 
@@ -5536,7 +7529,7 @@ public class NetLayoutInlineNew extends NetLayout {
                 i=0;
                 for(double degreeNode : degreeNodes)
                 {
-                    degreeNormalizedNodes[i] = 1.0 / (1.0 + Math.exp(-degreeNode));;
+                    degreeNormalizedNodes[i] = 1.0 / (1.0 + Math.exp(-degreeNode));
                     i++;
                 }
                 
@@ -5587,17 +7580,6 @@ public class NetLayoutInlineNew extends NetLayout {
                     
                     Color colorNode = colorScale.getColor((float)incolor);
                     String hexColor = "#"+Integer.toHexString(colorNode.getRGB()).substring(2);
-
-                    mxGeometry g = (mxGeometry) cell.getGeometry().clone();
-                    if(getSizeNode().equals("Small")){
-                        g.setHeight(10);
-                        g.setWidth(10);
-                    }
-                    else{
-                        g.setHeight(15);
-                        g.setWidth(15);
-                    }
-                    cell.setGeometry(g);
 
                     String styleNode2 =  mxConstants.STYLE_FILLCOLOR+"="+hexColor+";";
                     styleNode2 += mxConstants.STYLE_STROKECOLOR+"="+hexColor+";";
@@ -5686,6 +7668,8 @@ public class NetLayoutInlineNew extends NetLayout {
             graphComponentScalarInline.getGraph().getModel().endUpdate();
             
         }
+        graphComponentScalarInline.getGraph().repaint();
+        graphComponentScalarInline.getGraph().refresh();
     }
     
     
@@ -5910,15 +7894,16 @@ public class NetLayoutInlineNew extends NetLayout {
 
             
         }
-        else if(getColorEdgeInline().equals("Metadata File"))
+        else if(getColorEdgeInline().equals("Mtd with time File"))
         {
             String[] communitiesColors = new String[100000];
             
-            String[] colorsTable = new String[100];
-            String[] colorsLabel = new String[100];
+            String[] colorsTable = new String[10000];
+            String[] colorsLabel = new String[10000];
 
             JFileChooser openDialog = new JFileChooser();
             String filename = "";
+            filename = f.getPathDataset();
 
             openDialog.setMultiSelectionEnabled(false);
             openDialog.setDialogTitle("Open file");
@@ -5947,9 +7932,10 @@ public class NetLayoutInlineNew extends NetLayout {
                     else
                     {
 
-                        colorsTable[0] = "000 000 255"; //blue
-                        colorsTable[1] = "000 255 000"; //green
-                        colorsTable[2] = "255 000 000"; //red
+
+                        colorsTable[0] = "255 000 000"; //red
+                        colorsTable[1] = "000 000 255"; //blue
+                        colorsTable[2] = "000 255 000"; //green
                         colorsTable[3] = "255 185 60"; //orange
                         colorsTable[4] = "255 255 000"; //yellow
                         colorsTable[5] = "255 000 255"; //pink
@@ -5959,9 +7945,7 @@ public class NetLayoutInlineNew extends NetLayout {
                         colorsTable[9] = "000 255 255"; //cyan
                         colorsTable[10] = "255 255 255"; //black
 
-
-                         /*
-
+                        /*
 
                         colorsTable[2] = "255 000 000"; //red
                         colorsTable[6] = "000 255 000"; //green
@@ -6121,15 +8105,16 @@ public class NetLayoutInlineNew extends NetLayout {
                 }
             }
         }
-        else if(getColorEdgeInline().equals("Metadata Without Time"))
+        else if(getColorEdgeInline().equals("Metadata File"))
         {
             String[] communitiesColors = new String[100000];
             
-            String[] colorsTable = new String[100];
+            String[] colorsTable = new String[10000];
             String[] colorsLabel = new String[10000];
 
             JFileChooser openDialog = new JFileChooser();
             String filename = "";
+            filename = f.getPathDataset();
 
             openDialog.setMultiSelectionEnabled(false);
             openDialog.setDialogTitle("Open file");
@@ -6159,6 +8144,31 @@ public class NetLayoutInlineNew extends NetLayout {
                     {
 
 
+                        
+                        colorsTable[0] = "000 000 255"; //blue
+                        colorsTable[1] = "000 255 000"; //green
+                        colorsTable[2] = "255 000 000"; //red
+                        colorsTable[3] = "255 185 60"; //orange
+                        colorsTable[4] = "255 255 000"; //yellow
+                        colorsTable[5] = "255 000 255"; //pink
+                        colorsTable[6] = "100 070 000"; //brown
+                        colorsTable[7] = "205 092 092"; //light pink
+                        colorsTable[8] = "148 000 211"; //purple
+                        colorsTable[9] = "000 255 255"; //cyan
+
+                        colorsTable[10] = "000 000 000"; //Black
+                        colorsTable[11] = "064 224 208"; //Turquoise
+                        colorsTable[12] = "000 128 128"; //Teal
+                        colorsTable[13] = "000 100 000"; //DarkGreen
+                        colorsTable[14] = "085 107 047"; //DarkOliveGreen
+                        colorsTable[15] = "218 165 032"; //Goldenrod
+                        colorsTable[16] = "245 222 179"; //Wheat
+                        colorsTable[17] = "075 000 130"; //Indigo
+                        colorsTable[18] = "128 000 000"; //Maroon
+                        colorsTable[19] = "255 215 000"; //Gold
+                        colorsTable[20] = "240 230 140"; //Khaki
+                        
+                        /*
                         colorsTable[0] = "000 255 000"; //green
                         colorsTable[1] = "000 000 000"; //black
                         colorsTable[2] = "000 000 255"; //blue
@@ -6169,7 +8179,7 @@ public class NetLayoutInlineNew extends NetLayout {
                         colorsTable[7] = "205 092 092"; //light pink
                         colorsTable[8] = "148 000 211"; //purple
                         colorsTable[9] = "000 255 255"; //cyan
-                         /*
+                         
                         colorsTable[0] = "229 115 115";
                         colorsTable[1] = "213 000 000";
 
@@ -6203,7 +8213,7 @@ public class NetLayoutInlineNew extends NetLayout {
                         colorsTable[9] = "000 000 000";
                         colorsTable[10] = "000 000 000";
                          */
-                        for(int i = 10; i < colorsTable.length;i++)
+                        for(int i = 21; i < colorsTable.length;i++)
                         {
                             colorsTable[i] = "000 000 000";
                         }
@@ -6214,7 +8224,7 @@ public class NetLayoutInlineNew extends NetLayout {
 
                         graph.getModel().beginUpdate();
 
-                        String[] colorRGB = colorsTable[Integer.parseInt(tokens[2])].split(" ");
+                        String[] colorRGB = colorsTable[cont].split(" ");
                         Color color = new Color(Integer.parseInt(colorRGB[0]),Integer.parseInt(colorRGB[1]),Integer.parseInt(colorRGB[2]));
 
 
@@ -6248,7 +8258,7 @@ public class NetLayoutInlineNew extends NetLayout {
                                 colorsLabel[cont] = tokens2[2];
                             }
 
-                            colorRGB = colorsTable[Integer.parseInt(tokens2[2])].split(" ");
+                            colorRGB = colorsTable[cont].split(" ");
                             color = new Color(Integer.parseInt(colorRGB[0]),Integer.parseInt(colorRGB[1]),Integer.parseInt(colorRGB[2]));
 
                             //t = (int) Math.floor(Integer.parseInt(tokens2[2]) / resolution);
@@ -6327,6 +8337,185 @@ public class NetLayoutInlineNew extends NetLayout {
         else if(getColorEdgeInline().equals("Medium Size Color"))
         {
             recalculateMediumEdgesColors();
+        }
+        else if(getColorEdgeInline().equals("Scalar Color")){
+            graph.getModel().beginUpdate();
+            
+            
+            switch (getTypeColorEdge()) {
+                case "Blue to Cyan":
+                    colorScaleEdges = new BlueToCyanScale();
+                    break;
+                case "Blue to Yellow":
+                    colorScaleEdges = new BlueToYellowScale();
+                    break;
+                case "Gray Scale":
+                    colorScaleEdges = new GrayScale();
+                    break;
+                case "Green To White Scale":
+                    colorScaleEdges = new GreenToWhiteScale();
+                    break;
+                case "Heated Object Scale":
+                    colorScaleEdges = new HeatedObjectScale();
+                    break;
+                case "Linear Gray Scale":
+                    colorScaleEdges = new LinearGrayScale();
+                    break;
+                case "Locs Scale":
+                    colorScaleEdges = new LocsScale();
+                    break;
+                case "Green to Red":
+                    colorScaleEdges = new GreenToRed();
+                    break;
+                //case "Blue Scale":
+                  //  colorScaleEdges = new BlueScale();
+                    //break;
+                case "Rainbow Scale":
+                    colorScaleEdges = new RainbowScale();
+                    break;
+                case "Blue Sky To Orange":
+                    colorScaleEdges = new OrangeToBlueSky();
+                    break;
+                case "Orange To Blue Sky":
+                    colorScaleEdges = new BlueSkyToOrange();
+                    break;
+                case "Blue To Red":
+                    colorScaleEdges = new BlueToRed();
+                    break;   
+                case "Custom Color":
+                    java.awt.Color color1 = javax.swing.JColorChooser.showDialog(graphComponent,
+                    "Choose the Inicial Edge Color", java.awt.Color.BLACK);
+                    java.awt.Color color2 = javax.swing.JColorChooser.showDialog(graphComponent,
+                    "Choose the Final Edge Color", java.awt.Color.BLACK);
+                    if(color1 != null && color2 != null)
+                        colorScaleEdges = new CustomColor(color1,color2);
+                    else
+                        colorScaleEdges = new CustomColor(Color.BLACK,Color.BLACK);
+                    break;
+                default:
+                    colorScaleEdges = new GreenToRed();
+                    break;
+            }
+            
+            
+            Object[] roots_new = graph.getChildCells(graph.getDefaultParent(), true, false);
+            
+            mxCell cell_a = (mxCell) roots_new[0];
+            
+            InlineNodeAttribute att = (InlineNodeAttribute) cell_a.getValue();
+            eMaxColorEdges = att.getWeightInTimeExternal();
+            eMinColorEdges = att.getWeightInTimeExternal();
+
+            for(Object edge : roots_new){
+                
+                mxCell cell = (mxCell) edge;
+                
+                att = (InlineNodeAttribute) cell.getValue();
+                if(att.isEdge())
+                {
+                    float ia = att.getWeightInTimeExternal();
+                    if(ia > eMaxColorEdges)
+                        eMaxColorEdges = ia;
+                    if(ia < eMinColorEdges)
+                        eMinColorEdges = ia;
+                }
+            }
+            
+            //Edges
+            Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
+            for (Object root1 : roots) 
+            {
+                
+                float maxColor = 1;
+                float minColor = 0;
+
+                mxCell cell = (mxCell) root1;
+                att = (InlineNodeAttribute) cell.getValue();
+                if(att.isEdge())
+                {
+                    
+                    float incolor = (att.getWeightInTimeExternal() - eMinColorEdges) / (eMaxColorEdges - eMinColorEdges);
+
+                    if(incolor > maxColor)
+                        incolor = maxColor;
+
+
+                    Color colorNode = colorScaleEdges.getColor((float)incolor);
+                    String hexColor = "#"+Integer.toHexString(colorNode.getRGB()).substring(2);
+
+                    String styleShapeEdge = cell.getStyle();
+                    styleShapeEdge = styleShapeEdge.replaceAll("fillColor=[^;]*;","fillColor="+hexColor+";");
+                    styleShapeEdge = styleShapeEdge.replaceAll("gradientColor=[^;]*;","gradientColor="+hexColor+";");
+
+                    Object[] edd = {cell};
+                    graph.setCellStyle(styleShapeEdge, edd);
+
+                    
+                }
+            }
+            
+            graph.getModel().endUpdate();
+            
+             //Scalar Edges
+            roots = graphComponentScalarEdgeInline.getGraph().getChildCells(graphComponentScalarEdgeInline.getGraph().getDefaultParent(), true, false);
+            graphComponentScalarEdgeInline.getGraph().getModel().beginUpdate();
+            
+            boolean firstBool = true;
+            String first = "";
+            
+            for (Object root1 : roots) {
+                Object[] root = {root1};
+                mxCell cell = (mxCell) root1;
+                String idCell = cell.getId();
+                String[] parts = idCell.split(" ");
+                
+                Color colorNode = colorScaleEdges.getColor(Float.parseFloat(parts[1]));
+                String hexColor = "#"+Integer.toHexString(colorNode.getRGB()).substring(2);
+                
+                if(firstBool)
+                {
+                    first = hexColor;
+                    firstBool = false;
+                }
+
+                String styleNode = "";
+                if(eMinColorEdges == eMaxColorEdges)
+                {
+                    styleNode +=  mxConstants.STYLE_FILLCOLOR+"="+first+";";
+                    styleNode +=  mxConstants.STYLE_STROKECOLOR+"="+first+";";
+                }
+                else
+                {
+                    styleNode +=  mxConstants.STYLE_FILLCOLOR+"="+hexColor+";";
+                    styleNode +=  mxConstants.STYLE_STROKECOLOR+"="+hexColor+";";
+                }
+                styleNode += mxConstants.STYLE_MOVABLE+"=0;";
+                styleNode += mxConstants.STYLE_EDITABLE+"=0;";
+                styleNode += mxConstants.STYLE_RESIZABLE+"=0;";
+                styleNode += mxConstants.STYLE_NOLABEL+"=0;";
+                
+                Color corEmNegativo = new Color(255 - colorNode.getRed(), 255 - colorNode.getGreen(), 255 - colorNode.getBlue());
+                String hexColorNegative = "#"+Integer.toHexString(corEmNegativo.getRGB()).substring(2);
+                
+                if(cell.getId().equals("color 0")){
+                    styleNode +=  mxConstants.STYLE_FONTCOLOR+"="+hexColorNegative+";";
+                    cell.setValue((int)eMinColorEdges+"");
+                }
+                else if(cell.getId().equals("color 1")){
+                    styleNode +=  mxConstants.STYLE_FONTCOLOR+"="+hexColorNegative+";";
+                    cell.setValue((int)eMaxColorEdges+"");
+                }
+                styleNode += mxConstants.STYLE_FONTSIZE+"=15;";
+                styleNode += mxConstants.STYLE_FONTSTYLE+"="+mxConstants.FONT_BOLD+";";
+                styleNode += mxConstants.STYLE_LABEL_POSITION+"="+mxConstants.ALIGN_CENTER+";";
+                styleNode += mxConstants.STYLE_VERTICAL_LABEL_POSITION+"="+mxConstants.ALIGN_CENTER+";";
+                styleNode += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_RECTANGLE+";";
+                styleNode += mxConstants.STYLE_OPACITY+"=100;";
+                
+                graphComponentScalarEdgeInline.getGraph().setCellStyle(styleNode, root);
+            }
+            graphComponentScalarEdgeInline.getGraph().getModel().endUpdate();
+
         }
         else{
             
@@ -6468,6 +8657,9 @@ public class NetLayoutInlineNew extends NetLayout {
             
             
         }
+        
+        graphComponentScalarEdgeInline.getGraph().repaint();
+        graphComponentScalarEdgeInline.getGraph().refresh();
     }
     
     
@@ -6538,7 +8730,10 @@ public class NetLayoutInlineNew extends NetLayout {
                     
                     styleEstrutural = styleEstrutural.replace(mxConstants.STYLE_NOLABEL+"=1;",mxConstants.STYLE_NOLABEL+"=0;");
                     
+                    styleEstrutural = styleEstrutural.replaceAll("fontColor=[^;]*;","fontColor=#000000;");
+                    
                     graph.setCellStyle(styleEstrutural+styleShapeLeftRight, root);
+                    
                 }
             }
             
@@ -6693,6 +8888,35 @@ public class NetLayoutInlineNew extends NetLayout {
         this.showEdges = showEdges;
     }
     
+    
+    
+    public void setShowLineGraph(boolean showEdges) {
+            
+        
+        graph.getModel().beginUpdate();
+        for (Object root1 : listGraphLineElements) {
+            Object[] root = {root1};
+            mxCell cell = (mxCell) root1;
+            String styleShapeInline = cell.getStyle();
+
+            if(showEdges)
+            {
+                cell.setVisible(true);
+            }
+            else
+            {
+                cell.setVisible(false);
+            }
+            cell.setStyle(styleShapeInline);
+
+        }
+        
+        graph.getModel().endUpdate();
+        graph.refresh();
+        graph.repaint();
+        
+    }
+    
     public boolean showEdgesCommunities;
     public boolean blankSpaceCommunities = false;
     
@@ -6754,6 +8978,8 @@ public class NetLayoutInlineNew extends NetLayout {
         graph.refresh();
         this.showEdgesCommunities = showEdgesCommunities;
     }
+    
+      
     
     public void setShowEdgesExtraCommunities(boolean showEdgesCommunities) {
         
@@ -7744,7 +9970,7 @@ public class NetLayoutInlineNew extends NetLayout {
     }
     
     
-	 public void randomNodeOrdering() {
+    public void randomNodeOrdering() {
         
         List<InlineNodeAttribute> currentNodesIdOrder = new ArrayList();
         currentNodesIdOrder.addAll(listAttNodes);
@@ -9267,10 +11493,11 @@ public class NetLayoutInlineNew extends NetLayout {
    ArrayList<Double> qtdArestasEmCadaTimestampNone = null;
    ArrayList<Double> qtdArestasEmCadaTimestampRandom = null;
    
-   int kNodes = 0;
+   public static int kNodes;
+   public static String SEVisCommunityDetcMethod = "";
    
    
-   public ArrayList edgeSampling(String method, String numberNodes)
+   public ArrayList edgeSampling(String method, String numberNodes, boolean showWindowBoundaryStream)
    {
        ArrayList retorno = new ArrayList<>();
        this.nodesCount = Integer.parseInt(numberNodes);
@@ -9284,8 +11511,17 @@ public class NetLayoutInlineNew extends NetLayout {
        attE = (InlineNodeAttribute) ed.getValue();
        maxTime = attE.getTime();
        String linegraphColor = "#000000";
+       corResolucao = "#000080";
        
        int qtdNodesSample;
+       qtdArestasDescartadasEdgeSamplingStream = 0;
+       qtdArestasMantidasEdgeSamplingStream = 0;
+       tempoInicialIntervalo = 0;
+       qtdArestasMantidasNaJanela = 0;
+       
+//       if(windowSizeValue == 0)
+        //    windowSizeValue = 100;
+       System.out.println("Window size = " + windowSizeValue);
        
          Map<Integer, Integer> sortedMapAsc = sortByComparator(currentTemporalNodeOrder, true);
          List<Integer> posicaoAtualNosLayout = new ArrayList<>(sortedMapAsc.keySet());
@@ -9315,13 +11551,117 @@ public class NetLayoutInlineNew extends NetLayout {
                 linegraphColor = "#FF0000";
                 break;
             
+            case "Reservoir":
+                limpaLayoutQtdInstantesPlotadasSeForStreamAtingida(false, false);
+                int qtdEdgesSample = matrizDataInline.size() / 3;
+                System.out.println("Tamanho do sample Reservoir: " + qtdEdgesSample + " arestas.");
+                qtdArestasEmCadaTimestamp = plotaTemporalLayoutEstaticoComRecursoStream(isResolucaoDinamica, "Reservoir", qtdEdgesSample, posicaoAtualNosLayout);
+                System.out.println("Arestas descartadas pelo Reservoir: "  + qtdArestasDescartadasEdgeSamplingStream) ;
+                System.out.println("Arestas mantidas pelo Reservoir: "  + qtdArestasMantidasEdgeSamplingStream) ;
+                linegraphColor = "#006600"; //verde escuro
+                break;
+                
+            case "Stream/PIES":
+                limpaLayoutQtdInstantesPlotadasSeForStreamAtingida(false, false);
+                qtdNodesSample = (int) (nodesCount * 0.8); //
+                qtdArestasEmCadaTimestamp = plotaTemporalLayoutEstaticoComRecursoStream(isResolucaoDinamica, "PIES", qtdNodesSample, posicaoAtualNosLayout);
+                System.out.println("Arestas descartadas pelo PIES: "  + qtdArestasDescartadasEdgeSamplingStream) ;
+                System.out.println("Arestas mantidas pelo PIES: "  + qtdArestasMantidasEdgeSamplingStream) ;
+                linegraphColor = "#006600"; //verde escuro
+                
+                break;
+                
+            case "Partial-PIES":
+                limpaLayoutQtdInstantesPlotadasSeForStreamAtingida(false, false);
+                qtdNodesSample = (int) (0.8 * nodesCount );
+                qtdArestasEmCadaTimestamp = plotaTemporalLayoutEstaticoComRecursoStream(isResolucaoDinamica, "Partial-PIES", qtdNodesSample, posicaoAtualNosLayout);
+                System.out.println("Arestas descartadas pelo Partial-PIES: "  + (matrizDataInline.size() - qtdArestasMantidasEdgeSamplingStream)) ;
+                qtdArestasDescartadasEdgeSamplingStream = matrizDataInline.size() - qtdArestasMantidasEdgeSamplingStream;
+                System.out.println("Arestas mantidas pelo Partial-PIES: "  + qtdArestasMantidasEdgeSamplingStream) ;
+                linegraphColor = "#8d69c7"; //roxo
+                break;
+                
+            case "SEVis":
+                
+                
+                limpaLayoutQtdInstantesPlotadasSeForStreamAtingida(false, false);
+                
+                //kNodes = (int) (0.25 * nodesCount);
+                System.out.println("k (space saving) = " + kNodes);
+                
+                
+                qtdArestasEmCadaTimestamp = plotaTemporalLayoutEstaticoComRecursoStream(isResolucaoDinamica, "Intra-Louvain", 0, posicaoAtualNosLayout); //Não usa o terceiro argumento (tamanhoAmostra)
+                System.out.println("Arestas descartadas pelo SEVis-" + SEVisCommunityDetcMethod + ": "  + (matrizDataInline.size() - qtdArestasMantidasEdgeSamplingStream)) ;
+                qtdArestasDescartadasEdgeSamplingStream = matrizDataInline.size() - qtdArestasMantidasEdgeSamplingStream;
+                System.out.println("Arestas mantidas pelo SEVis-" + SEVisCommunityDetcMethod + ": "  + qtdArestasMantidasEdgeSamplingStream) ;
+                linegraphColor = "#8d69c7"; //roxo
+                
+                listAttNodesSamplingLouvain = new ArrayList<InlineNodeAttribute>();
+                listAllEdgesSamplingLouvain = new ArrayList();
+                
+                //Update listEdgesJgraph so the Epidemiology Processes works after sampling
+                updateListEdgesJgraphAfterSampling();
+
+                break;    
             default:
                 break;
                 
        }
        
+        updateMatrizDataInLineAnPutNodesInFrontOfEdges();
         
+        double[] x = new double[qtdArestasEmCadaTimestamp.size()];
+        double[] y = new double[qtdArestasEmCadaTimestampNone.size()];
+        
+        String linegraphNone = "";
+        String linegraphSampling = "";
+        
+        
+
+        for (int i = 0; i < qtdArestasEmCadaTimestamp.size(); i++)
+        {
+            x[i] = qtdArestasEmCadaTimestamp.get(i);
+            y[i] = qtdArestasEmCadaTimestampNone.get(i);
+            
+            //if(i >= 1233) //Teste para o artigo.
+            //{
+            linegraphSampling += (x[i]*100.0) + "\r\n";
+            linegraphNone += (y[i]*100.0) + "\r\n";
+                
+            //}
+        }
+        //util.FileHandler.gravaArquivo("Rede apos sampling:\r\n" + linegraphSampling + "\r\n \r\n", "F:\\linegraph.txt", true);
+        
+        //util.FileHandler.gravaArquivo("Rede original:\r\n" + linegraphNone + "\r\n \r\n", "F:\\linegraph.txt", true);
+        
+        
+
+        util.KSTest resultado = util.KSTest.test(x, y);
+        System.out.println("--------- KsTest ---------");
+        System.out.println("d = " + resultado.d);
+        System.out.println("p-value = " + resultado.pvalue);
+        System.out.println("--------------------------");
+    
+      
+        double maior = -1;
+        if(qtdArestasEmCadaTimestamp != null)
+        {
+            for(Double edgeSize : qtdArestasEmCadaTimestamp)
+            {
+                if(edgeSize > maior)
+                    maior = edgeSize;
+            }
+
+           plotaLineGraphEstaticoGenerico(qtdArestasEmCadaTimestamp, 0, maior,linegraphColor,showWindowBoundaryStream);
+       
+        }
+        
+        retorno.add(resultado);
+        retorno.add(qtdArestasDescartadasEdgeSamplingStream); //arestas descartadas
+        retorno.add(qtdArestasMantidasEdgeSamplingStream); //arestas mantidas
+
        graphComponent.refresh();
+       
        return retorno;
        
    }
@@ -9834,5 +12174,218 @@ public class NetLayoutInlineNew extends NetLayout {
         
         return qtdArestasEmCadaTimestamp;
    }
+   
+   
+    public void changeTemporalWeightEdges() {
+        
+        graph.getModel().beginUpdate(); 
+        if(getWeightEdge().equals("Degree"))
+        {
+            Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
+            
+            for (Object root1 : roots) 
+            {
+                mxCell cell = (mxCell) root1;
+                InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+                if(att.isEdge())
+                {
+                    att.setWeightInTimeExternal(1f);
+                }
+            }
+        }
+        else if(getWeightEdge().equals("Weight File"))
+        {
+            JFileChooser openDialog = new JFileChooser();
+            String filename = "";
+            filename = f.getPathDataset();
+
+            openDialog.setMultiSelectionEnabled(false);
+            openDialog.setDialogTitle("Open file");
+
+
+            openDialog.setSelectedFile(new File(filename));
+            openDialog.setCurrentDirectory(new File(filename));
+
+            int result = openDialog.showOpenDialog(openDialog);
+            if (result == JFileChooser.APPROVE_OPTION) {
+                filename = openDialog.getSelectedFile().getAbsolutePath();
+                openDialog.setSelectedFile(new File(""));
+                BufferedReader file;
+                try {
+                    file = new BufferedReader(new FileReader(new File(filename)));
+                    String line = file.readLine();
+                    String[] tokens = line.split(" ");
+                    String tmp, strLine = "";
+                                        
+                    if(tokens.length != 4) // node_origin | node_destiny | timestamp | weight
+                    {
+                        JOptionPane.showMessageDialog(null,"File format different from the expected. Check the Information button for details.","Error",JOptionPane.ERROR_MESSAGE);
+                    }
+                    else
+                    {
+                        int count_edges_temporal = 0;
+                        while ((tmp = file.readLine()) != null)
+                        {
+                            strLine = tmp;
+                            String[] tokens2 = strLine.split(" ");
+                            
+                            //create file of weighted edges to calculate commmunities
+                            String edge_string = tokens2[0]+" "+tokens2[1]+" "+tokens2[2];
+                            String edge_string_inv = tokens2[1]+" "+tokens2[0]+" "+tokens2[2];
+                            if(edgeWeight.get(edge_string) == null)
+                            {
+                                edgeWeight.put(edge_string_inv, Integer.parseInt(tokens2[3]));
+                                
+                            }
+                            else
+                            {
+                                edgeWeight.put(edge_string, Integer.parseInt(tokens2[3]));
+                            }
+                            
+                            //tempo+" "+idSource+" "+idTarget
+                            
+                            boolean achou = false;
+                            mxCell myCell = (mxCell) ((mxGraphModel)graph.getModel()).getCell(tokens2[2]+" "+tokens2[0]+" "+tokens2[1]);
+                            if(myCell == null)
+                            {
+                                myCell = (mxCell) ((mxGraphModel)graph.getModel()).getCell(tokens2[2]+" "+tokens2[1]+" "+tokens2[0]);
+                                if(myCell != null)
+                                {
+                                    achou = true;
+                                }
+                            }
+                            else
+                                achou = true;
+                            if(achou)
+                            {
+                                count_edges_temporal++;
+                                InlineNodeAttribute att = (InlineNodeAttribute) myCell.getValue();
+                                att.setWeightInTimeExternal(Float.parseFloat(tokens2[3]));
+                            }
+                        }
+                        
+                        System.out.println("Arestas temporais contadas: "+count_edges_temporal);
+                    }
+                }catch (FileNotFoundException ex) {
+                    Logger.getLogger(OpenDataSetDialog.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (IOException ex) {
+                    Logger.getLogger(OpenDataSetDialog.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            }
+        }
+        graph.getModel().endUpdate();
+        graph.refresh();
+    }
+    
+    
+    final public void changeSizeTemporalEdges(){
+        
+        graph.getModel().beginUpdate();
+        if(getSizeEdge().equals("Original")){
+           
+            
+            Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
+            
+            for (Object root1 : roots) 
+            {
+                mxCell cell = (mxCell) root1;
+                InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+                if(att.isEdge())
+                {
+                    String styleEdge = cell.getStyle();
+                    
+                    mxGeometry g = (mxGeometry) cell.getGeometry().clone();
+                    g.setWidth(10);
+                    cell.setGeometry(g);
+                    
+                }
+            }
+        }
+        else if(getSizeEdge().equals("Stroke Edges")){
+            
+            Object[] roots_new = graph.getChildCells(graph.getDefaultParent(), true, false);
+            
+            mxCell cell_a = (mxCell) roots_new[0];
+            
+            InlineNodeAttribute att = (InlineNodeAttribute) cell_a.getValue();
+            eMaxSizeEdges = att.getWeightInTimeExternal();
+            eMinSizeEdges = att.getWeightInTimeExternal();
+
+            for(Object edge : roots_new){
+                
+                mxCell cell = (mxCell) edge;
+                
+                att = (InlineNodeAttribute) cell.getValue();
+                if(att.isEdge())
+                {
+                    float ia = att.getWeightInTimeExternal();
+                    if(ia > eMaxSizeEdges)
+                        eMaxSizeEdges = ia;
+                    if(ia < eMinSizeEdges)
+                        eMinSizeEdges = ia;
+                }
+            }
+            
+            //Edges
+            Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
+            for (Object root1 : roots) 
+            {
+                
+                float maxSize = 10f;
+                float minSize = 3f;
+
+                
+                mxCell cell = (mxCell) root1;
+                att = (InlineNodeAttribute) cell.getValue();
+                if(att.isEdge())
+                {
+                    float insize = (att.getWeightInTimeExternal() - eMinSizeEdges) / (eMaxSizeEdges - eMinSizeEdges) * (maxSize - minSize) + minSize;
+                
+                    if(Float.isNaN(insize))
+                        insize = maxSize;
+                    mxGeometry g = (mxGeometry) cell.getGeometry().clone();
+                    g.setWidth(insize);
+                    cell.setGeometry(g);
+                    
+                }
+            }
+        }
+        graph.getModel().endUpdate();
+    }
+   
+    ArrayList<String> labelNodes = new ArrayList();
+    
+    public void changeLabelNodesTemporal(HashMap<String, String> newIdList){
+
+        labelNodes = new ArrayList();
+        
+        graph.getModel().beginUpdate(); 
+
+        //All nodes graph
+        Object[] roots = graph.getChildCells(graph.getDefaultParent(), true, false);
+        for (Object root1 : roots) {
+            mxCell cell = (mxCell) root1;
+            InlineNodeAttribute att = (InlineNodeAttribute) cell.getValue();
+
+            if(att.isLeft() || att.isRight())
+            {
+                
+                if(newIdList.get(att.getId_original()+"") != null)
+                {
+                    if(!labelNodes.contains(newIdList.get(att.getId_original()+"")))
+                        labelNodes.add(newIdList.get(att.getId_original()+""));
+                    att.setLabel(newIdList.get(att.getId_original()+""));
+                }
+                else
+                {
+                    if(!labelNodes.contains(att.getId_original()+""))
+                        labelNodes.add(att.getId_original()+"");
+                }
+            }
+        }
+        graph.getModel().endUpdate();
+        graph.refresh();
+        graph.repaint(); 
+    }
    
 }

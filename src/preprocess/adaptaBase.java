@@ -83,9 +83,9 @@ import java.util.logging.Logger;
  */
 public class adaptaBase {
     
-    static String claudio = "D:\\Claudio\\Dropbox\\Artigo Claudio e Jean\\Bases\\Fabiola Brazilian Twitter";
+    static String claudio = ""; //D:\\Claudio\\Dropbox\\Artigo Claudio e Jean\\Bases\\Fabiola Brazilian Twitter";
     
-    static String jean = "D:\\Dropbox\\UFU\\Doutorado\\Artigo Claudio e Jean\\Bases\\Fabiola Brazilian Twitter";
+    static String jean = ""; //D:\\Dropbox\\UFU\\Doutorado\\Artigo Claudio e Jean\\Bases\\Fabiola Brazilian Twitter";
     static int resolucao = 1;
     public static void main(String args[]) {
          ArrayList bd = leBaseOriginal();

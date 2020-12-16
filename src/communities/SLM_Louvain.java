@@ -98,6 +98,9 @@ public class SLM_Louvain {
     int print_output = 0;
     int modularity_function = 1;
     int resolution_parameter = 1;
+    boolean calculate_with_weight = false;
+    boolean weight_external_file = false;
+    HashMap<String,Integer> edgeWeight_external_file = new HashMap();
     //O args[4] define o método que será usado e será, portanto, preenchido em cada método.
      String[] args = {txtTemporarioEntrada, txtTemporarioSaida, modularity_function + "", resolution_parameter + "", "", n_random_starts + "", n_iterations + "", random_seed + "", print_output + ""};
     /*
@@ -213,12 +216,57 @@ public class SLM_Louvain {
                 
             }
         });
+        
+        HashMap<String,Integer> edgeWeight = new HashMap();
+        if(calculate_with_weight)
+        {
+            if(weight_external_file)
+            {
+                edgeWeight = edgeWeight_external_file;
+            }
+            else
+            {
+                //Calculate edges weight
+                for(Object edge : arestas)
+                {
+                    Integer[] infoEdge = (Integer[]) edge;
+                    String edge_string = infoEdge[0]+" "+infoEdge[1];
+                    String edge_string_inv = infoEdge[1]+" "+infoEdge[0];
+                    if(edgeWeight.get(edge_string) == null)
+                    {
+                        if(edgeWeight.get(edge_string_inv) == null)
+                        {
+                            edgeWeight.put(edge_string, 1);
+                        }
+                        else
+                        {
+                            edgeWeight.put(edge_string_inv, edgeWeight.get(edge_string_inv)+1);
+                        }
+                    }
+                    else
+                    {
+                        edgeWeight.put(edge_string, edgeWeight.get(edge_string)+1);
+                    }
+                }
+            }
+        }
+        
         for(Object edge : arestas)
         {
             Integer[] ar = (Integer[]) edge;
             sb.append(ar[0]);
             sb.append("\t");
             sb.append(ar[1]);
+            if(calculate_with_weight)
+            {
+                sb.append("\t");
+                if(edgeWeight.get(ar[0]+" "+ar[1]) != null)
+                    sb.append(edgeWeight.get(ar[0]+" "+ar[1]));
+                else if(edgeWeight.get(ar[1]+" "+ar[0]) != null)
+                    sb.append(edgeWeight.get(ar[1]+" "+ar[0]));
+                else
+                    System.out.println("error edge weights");
+            }
             sb.append(System.getProperty("line.separator"));
         }
         util.FileHandler.gravaArquivo(sb.toString(), txtTemporarioEntrada, false);
@@ -226,7 +274,12 @@ public class SLM_Louvain {
     
     
     
-    public HashMap<Integer, List<InlineNodeAttribute>> execute(List<InlineNodeAttribute> listAttNodes, ArrayList listAllEdges, String metodoDeteccao) {
+    public HashMap<Integer, List<InlineNodeAttribute>> execute(List<InlineNodeAttribute> listAttNodes, ArrayList listAllEdges, String metodoDeteccao, boolean calculate_with_weight, boolean weight_external_file, HashMap<String,Integer> edgeWeight_external_file) {
+        
+        this.calculate_with_weight = calculate_with_weight;
+        this.weight_external_file = weight_external_file;
+        this.edgeWeight_external_file = edgeWeight_external_file;
+        
         File louvainEntrada = null, louvainSaida = null;
         try {
             criaArquivoDaRede(listAllEdges, metodoDeteccao.contains("sampling")? false : true);

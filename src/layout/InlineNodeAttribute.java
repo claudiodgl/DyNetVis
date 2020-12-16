@@ -56,6 +56,34 @@ package layout;
 public class InlineNodeAttribute implements Comparable {
 
     /**
+     * @return the right
+     */
+    public boolean isRight() {
+        return right;
+    }
+
+    /**
+     * @param right the right to set
+     */
+    public void setRight(boolean right) {
+        this.right = right;
+    }
+
+    /**
+     * @return the weightInTimeExternal
+     */
+    public float getWeightInTimeExternal() {
+        return weightInTimeExternal;
+    }
+
+    /**
+     * @param weightInTimeExternal the weightInTimeExternal to set
+     */
+    public void setWeightInTimeExternal(float weightInTimeExternal) {
+        this.weightInTimeExternal = weightInTimeExternal;
+    }
+
+    /**
      * @return the sourceDirectionInfection
      */
     public boolean isSourceDirectionInfection() {
@@ -171,7 +199,9 @@ public class InlineNodeAttribute implements Comparable {
     
     private int time, degree, id_original, x_original, y_original, x_atual, y_atual,weightInTime , heightEdge , heightEdge_atual, edgeSize, inDegree, outDegree, activityDegree;
     private String label;
-    private boolean isTimeNode, isLineNode, isNode,left , isHistogram, isGraphLine , isEdge, isGraphLineNodes, sourceDirectionInfection;
+    private boolean isTimeNode, isLineNode, isNode,left , isHistogram, isGraphLine , isEdge, isGraphLineNodes, sourceDirectionInfection,right;
+    
+    private float weightInTimeExternal=1f;
     
     //Epidemiology
     private boolean stateBusy;

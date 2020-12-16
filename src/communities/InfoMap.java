@@ -95,6 +95,9 @@ public class InfoMap {
     // caso o numero seja null, é atribuído a ele o valor 2. Porém no exemplo de uso do infomap em http://www.mapequation.org/code.html#Link-list-format,
     // o valor é 10.
     private static int numberAttempts = 10;
+    boolean calculate_with_weight = false;
+    boolean weight_external_file = false;
+    HashMap<String,Integer> edgeWeight_external_file = new HashMap();
     
     public InfoMap() {
     }
@@ -228,12 +231,57 @@ public class InfoMap {
                 
             }
         });
+        
+        HashMap<String,Integer> edgeWeight = new HashMap();
+        if(calculate_with_weight)
+        {
+            if(weight_external_file)
+            {
+                edgeWeight = edgeWeight_external_file;
+            }
+            else
+            {
+                //Calculate edges weight
+                for(Object edge : arestas)
+                {
+                    Integer[] infoEdge = (Integer[]) edge;
+                    String edge_string = infoEdge[0]+" "+infoEdge[1];
+                    String edge_string_inv = infoEdge[1]+" "+infoEdge[0];
+                    if(edgeWeight.get(edge_string) == null)
+                    {
+                        if(edgeWeight.get(edge_string_inv) == null)
+                        {
+                            edgeWeight.put(edge_string, 1);
+                        }
+                        else
+                        {
+                            edgeWeight.put(edge_string_inv, edgeWeight.get(edge_string_inv)+1);
+                        }
+                    }
+                    else
+                    {
+                        edgeWeight.put(edge_string, edgeWeight.get(edge_string)+1);
+                    }
+                }
+            }
+        }
+        
         for(Object edge : arestas)
         {
             Integer[] ar = (Integer[]) edge;
             sb.append(ar[0]);
             sb.append("\t");
             sb.append(ar[1]);
+            if(calculate_with_weight)
+            {
+                sb.append("\t");
+                if(edgeWeight.get(ar[0]+" "+ar[1]) != null)
+                    sb.append(edgeWeight.get(ar[0]+" "+ar[1]));
+                else if(edgeWeight.get(ar[1]+" "+ar[0]) != null)
+                    sb.append(edgeWeight.get(ar[1]+" "+ar[0]));
+                else
+                    System.out.println("error edge weights");
+            }
             sb.append(System.getProperty("line.separator"));
         }
    /*     for (Object edge : listAllEdges) {
@@ -255,7 +303,11 @@ public class InfoMap {
         util.FileHandler.gravaArquivo(sb.toString(), diretorioExeInfomap + nomeBDInfomapSemExtensao + ".net", false);
     }
 
-    public HashMap<Integer, List<InlineNodeAttribute>> execute(ArrayList listAllEdges, List<InlineNodeAttribute> listAttNodes) {
+    public HashMap<Integer, List<InlineNodeAttribute>> execute(ArrayList listAllEdges, List<InlineNodeAttribute> listAttNodes, boolean calculate_with_weight, boolean weight_external_file, HashMap<String,Integer> edgeWeight_external_file) {
+        
+        this.calculate_with_weight = calculate_with_weight;
+        this.weight_external_file = weight_external_file;
+        this.edgeWeight_external_file = edgeWeight_external_file;
         
         File treeOut = null, cluOut = null, mapOut = null, mapNetOut = null, mapVecOut = null; //Arquivos gerados pelo Infomap
         File arqRede = null; //Objeto file para o arquivo de entrada com os nós e arestas (redeInfoMap.net)

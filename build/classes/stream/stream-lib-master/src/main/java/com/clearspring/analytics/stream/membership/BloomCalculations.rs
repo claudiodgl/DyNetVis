@@ -1,0 +1,2 @@
+com.clearspring.analytics.stream.membership.BloomCalculations
+com.clearspring.analytics.stream.membership.BloomCalculations$BloomSpecification

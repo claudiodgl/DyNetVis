@@ -68,7 +68,7 @@ public class FiltrarArquivoTwitter {
     /**
      * @param args the command line arguments
      */
-    static String claudio = "C:\\Users\\Claudio Linhares\\Documents\\twitter";
+    static String claudio = ""; //C:\\Users\\Claudio Linhares\\Documents\\twitter";
     
     public static void main(String[] args) {
         // TODO code application logic here

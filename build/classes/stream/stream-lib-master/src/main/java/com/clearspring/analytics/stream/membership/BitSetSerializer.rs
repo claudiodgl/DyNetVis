@@ -1,0 +1,1 @@
+com.clearspring.analytics.stream.membership.BitSetSerializer

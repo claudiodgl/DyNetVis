@@ -69,7 +69,8 @@ public class Statistic {
     
     private static int communityMinSizeThreshold = 1;
    // private static String pathGT = "D:\\Dropbox\\Claudio\\Networks\\Escola\\Primary School\\GT.txt";
-    private static String pathGT = "C:\\Users\\Claudio Linhares\\Dropbox\\Doutorado\\Pesquisa Claudio (1)\\Networks\\inVS\\GT.txt";
+  //  private static String pathGT = "C:\\Users\\Claudio Linhares\\Dropbox\\Doutorado\\Pesquisa Claudio (1)\\Networks\\inVS\\GT.txt";
+    private static String pathGT = "";
   //  private static String pathGT = "D:\\Dropbox\\Claudio\\dados\\hospital\\GT.txt";
     private static HashMap<Integer, List<Integer>> comunidadesGT;
     private boolean verbose = false;

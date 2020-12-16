@@ -49,8 +49,14 @@
 
 package forms;
 
+import com.clearspring.analytics.stream.Counter;
+import com.clearspring.analytics.stream.StreamSummary;
+import com.mxgraph.model.mxCell;
+import com.mxgraph.model.mxGraphModel;
 import com.mxgraph.view.mxGraphView;
+import communities.SLM_Louvain;
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Container;
 import java.awt.Desktop;
 import java.awt.Dimension;
@@ -60,26 +66,39 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Random;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import javax.swing.BorderFactory;
 import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
+import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JProgressBar;
 import javax.swing.JSpinner;
 import javax.swing.JTextField;
 import javax.swing.border.Border;
+import javax.swing.filechooser.FileNameExtensionFilter;
+import layout.InlineNodeAttribute;
 import layout.NetLayout;
+import layout.NetLayoutCommunity;
 import layout.NetLayoutInlineNew;
+import static layout.NetLayoutInlineNew.fadingFactor;
 import layout.NetLayoutMatrix;					  
+import randomNetworks.RandomModularNetworkGenerator;
 import randomNetworks.TemporalBarabasiAlbertModel;
 
 
@@ -133,7 +152,7 @@ public class OpenDataSetDialog extends JDialog {
         formCombo1.removeItemAt(5);
         formCombo1.removeItemAt(4);
         formCombo1.removeItemAt(3);
-        formCombo1.removeItemAt(2);
+        //formCombo1.removeItemAt(2);
         //jPanel4.setRows(1);
         //jPanel4.setPreferredSize(new Dimension(450,70));
     }
@@ -175,16 +194,22 @@ public class OpenDataSetDialog extends JDialog {
         jLabel14 = new javax.swing.JLabel();
         jPanel4 = new javax.swing.JPanel();
         jLabel10 = new javax.swing.JLabel();
-        jLabel15 = new javax.swing.JLabel();
         jLabel5 = new javax.swing.JLabel();
         resolutionSpinner = new javax.swing.JSpinner();
+        jLabel7 = new javax.swing.JLabel();
+        wsizeSlider = new javax.swing.JSlider();
+        jLabel8 = new javax.swing.JLabel();
+        ffSlider = new javax.swing.JSlider();
+        windowSizeTextbox = new javax.swing.JTextField();
+        fadingFactorTextBox = new javax.swing.JTextField();
+        whichResolution = new javax.swing.JComboBox<>();
         buttonPanel1 = new javax.swing.JPanel();
         OKButton1 = new javax.swing.JButton();
         cancelButton1 = new javax.swing.JButton();
         jPanel2 = new javax.swing.JPanel();
 
         setMaximumSize(null);
-        setPreferredSize(new java.awt.Dimension(490, 520));
+        setPreferredSize(new java.awt.Dimension(490, 670));
         setResizable(false);
         setSize(new java.awt.Dimension(400, 800));
         getContentPane().setLayout(new java.awt.FlowLayout());
@@ -201,7 +226,7 @@ public class OpenDataSetDialog extends JDialog {
         jPanel3.add(jLabel23);
 
         formCombo1.setFont(new java.awt.Font("Tahoma", 0, 12)); // NOI18N
-        formCombo1.setModel(new javax.swing.DefaultComboBoxModel(new String[] { "Temporal and Structural", "Matrix", "Stream", "Community", "Robots", "Centrality" }));
+        formCombo1.setModel(new javax.swing.DefaultComboBoxModel(new String[] { "Temporal and Structural", "Matrix", "Community", "Stream", "Robots", "Centrality" }));
         formCombo1.setMaximumSize(null);
         formCombo1.setName(""); // NOI18N
         formCombo1.addItemListener(new java.awt.event.ItemListener() {
@@ -404,26 +429,19 @@ public class OpenDataSetDialog extends JDialog {
 
         jPanel4.setBorder(javax.swing.BorderFactory.createBevelBorder(javax.swing.border.BevelBorder.RAISED));
         jPanel4.setAlignmentX(0.0F);
-        jPanel4.setPreferredSize(new java.awt.Dimension(450, 60));
-        jPanel4.setLayout(new java.awt.GridLayout(2, 0, 2, 2));
+        jPanel4.setPreferredSize(new java.awt.Dimension(450, 200));
 
         jLabel10.setFont(new java.awt.Font("Tahoma", 0, 12)); // NOI18N
-        jLabel10.setHorizontalAlignment(javax.swing.SwingConstants.RIGHT);
-        jLabel10.setText("Resolution:");
+        jLabel10.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        jLabel10.setText("Resolution (timeslicing):");
         jLabel10.setVerticalAlignment(javax.swing.SwingConstants.TOP);
         jLabel10.setEnabled(false);
         jLabel10.setPreferredSize(new java.awt.Dimension(430, 30));
-        jPanel4.add(jLabel10);
-
-        jLabel15.setText("                                                        ");
-        jLabel15.setPreferredSize(new java.awt.Dimension(190, 14));
-        jPanel4.add(jLabel15);
 
         jLabel5.setHorizontalAlignment(javax.swing.SwingConstants.RIGHT);
-        jLabel5.setText("Resolution Time");
+        jLabel5.setText("Resolution Scale");
         jLabel5.setEnabled(false);
         jLabel5.setPreferredSize(new java.awt.Dimension(100, 15));
-        jPanel4.add(jLabel5);
 
         resolutionSpinner.setModel(new javax.swing.SpinnerNumberModel(1, 1, null, 1));
         resolutionSpinner.setEnabled(false);
@@ -435,7 +453,100 @@ public class OpenDataSetDialog extends JDialog {
                 resolutionSpinnerStateChanged(evt);
             }
         });
-        jPanel4.add(resolutionSpinner);
+
+        jLabel7.setText("Window size");
+        jLabel7.setEnabled(false);
+
+        wsizeSlider.setEnabled(false);
+        wsizeSlider.addChangeListener(new javax.swing.event.ChangeListener() {
+            public void stateChanged(javax.swing.event.ChangeEvent evt) {
+                wsizeSliderStateChanged(evt);
+            }
+        });
+
+        jLabel8.setText("Fading Factor");
+        jLabel8.setEnabled(false);
+
+        ffSlider.setEnabled(false);
+        ffSlider.addChangeListener(new javax.swing.event.ChangeListener() {
+            public void stateChanged(javax.swing.event.ChangeEvent evt) {
+                ffSliderStateChanged(evt);
+            }
+        });
+
+        windowSizeTextbox.setEnabled(false);
+        windowSizeTextbox.setPreferredSize(new java.awt.Dimension(100, 22));
+
+        fadingFactorTextBox.setEnabled(false);
+        fadingFactorTextBox.setPreferredSize(new java.awt.Dimension(100, 22));
+
+        whichResolution.setModel(new javax.swing.DefaultComboBoxModel<>(new String[] { "Select", "Static (uniform)", "Balanced Visual Complexity", "Adaptive Resolution" }));
+        whichResolution.setEnabled(false);
+        whichResolution.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                whichResolutionActionPerformed(evt);
+            }
+        });
+
+        javax.swing.GroupLayout jPanel4Layout = new javax.swing.GroupLayout(jPanel4);
+        jPanel4.setLayout(jPanel4Layout);
+        jPanel4Layout.setHorizontalGroup(
+            jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(jPanel4Layout.createSequentialGroup()
+                .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addGroup(jPanel4Layout.createSequentialGroup()
+                        .addGap(24, 24, 24)
+                        .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
+                            .addGroup(jPanel4Layout.createSequentialGroup()
+                                .addComponent(jLabel7)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                .addComponent(windowSizeTextbox, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                            .addGroup(jPanel4Layout.createSequentialGroup()
+                                .addComponent(jLabel8)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                .addComponent(fadingFactorTextBox, javax.swing.GroupLayout.PREFERRED_SIZE, 101, javax.swing.GroupLayout.PREFERRED_SIZE)))
+                        .addGap(6, 6, 6)
+                        .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
+                            .addComponent(ffSlider, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                            .addComponent(wsizeSlider, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)))
+                    .addGroup(jPanel4Layout.createSequentialGroup()
+                        .addContainerGap()
+                        .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING, false)
+                            .addComponent(jLabel10, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.PREFERRED_SIZE, 1, Short.MAX_VALUE)
+                            .addGroup(javax.swing.GroupLayout.Alignment.LEADING, jPanel4Layout.createSequentialGroup()
+                                .addGap(82, 82, 82)
+                                .addComponent(jLabel5, javax.swing.GroupLayout.PREFERRED_SIZE, 110, javax.swing.GroupLayout.PREFERRED_SIZE)))
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                        .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
+                            .addComponent(resolutionSpinner, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                            .addComponent(whichResolution, 0, 199, Short.MAX_VALUE))))
+                .addContainerGap(31, Short.MAX_VALUE))
+        );
+        jPanel4Layout.setVerticalGroup(
+            jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(jPanel4Layout.createSequentialGroup()
+                .addGap(12, 12, 12)
+                .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(jLabel10, javax.swing.GroupLayout.PREFERRED_SIZE, 27, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addComponent(whichResolution, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addGap(25, 25, 25)
+                .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(resolutionSpinner, javax.swing.GroupLayout.PREFERRED_SIZE, 27, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addComponent(jLabel5, javax.swing.GroupLayout.PREFERRED_SIZE, 27, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(wsizeSlider, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                        .addComponent(windowSizeTextbox, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                        .addComponent(jLabel7)))
+                .addGap(10, 10, 10)
+                .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addGroup(jPanel4Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                        .addComponent(fadingFactorTextBox, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                        .addComponent(jLabel8))
+                    .addComponent(ffSlider, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addContainerGap(26, Short.MAX_VALUE))
+        );
 
         getContentPane().add(jPanel4);
 
@@ -469,8 +580,8 @@ public class OpenDataSetDialog extends JDialog {
     private void pointsButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_pointsButtonActionPerformed
         
         JFileChooser openDialog = new JFileChooser();
-        String filename = "C:\\Jean\\OneDrive\\StreamingNetworks\\Facebook\\IncrementalLayout\\";
-        //String filename = "";
+        //String filename = "C:\\Jean\\OneDrive\\StreamingNetworks\\Facebook\\IncrementalLayout\\";
+        String filename = "";
         
         boolean errorFormatFile = false;
         
@@ -486,7 +597,7 @@ public class OpenDataSetDialog extends JDialog {
         }
         
         openDialog.setSelectedFile(new File(filename));
-        openDialog.setCurrentDirectory(new File(filename));
+        frame.setPathDataset(filename);
        
         int result = openDialog.showOpenDialog(this);
         if (result == JFileChooser.APPROVE_OPTION) {
@@ -497,6 +608,7 @@ public class OpenDataSetDialog extends JDialog {
            
             
             this.getPointsTextField().setText(filename);
+            frame.setPathDataset(getPointsTextField().getText());
             openDialog.setSelectedFile(new File(""));
             
             BufferedReader file;
@@ -554,7 +666,18 @@ public class OpenDataSetDialog extends JDialog {
                         this.maximumTime.setMaximum((int)maiorTempo);
                         this.maximumTime.setValue((int)maiorTempo);
 
+                        //Static Resolution
+                        this.whichResolution.setSelectedIndex(1);
                         this.resolutionSpinner.setValue(1);
+                        
+                        //Adaptive Resolution
+                        this.ffSlider.setMaximum(1000);
+                        this.ffSlider.setMinimum(500);
+                        this.ffSlider.setValue(750);
+                        
+                        this.wsizeSlider.setMinimum(1);
+                        this.wsizeSlider.setMaximum(500);
+                        this.wsizeSlider.setValue(250);
                         
                     }
                     
@@ -577,6 +700,7 @@ public class OpenDataSetDialog extends JDialog {
     }//GEN-LAST:event_pointsTextFieldActionPerformed
 
     NetLayoutInlineNew netInline = new NetLayoutInlineNew();
+    
     private void OKButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_OKButton1ActionPerformed
           
            Thread t = new Thread() {
@@ -591,9 +715,10 @@ public class OpenDataSetDialog extends JDialog {
 
                 HashMap<Integer,Integer> vetorIdNodesNormalizados = new HashMap();
                 HashMap<Long,String> matrizRolutos = new HashMap();
-                NetLayout net = null;
+                
                 
                 NetLayoutMatrix netLayoutMatrix = new NetLayoutMatrix();
+                NetLayoutCommunity netLayoutCommunity = new NetLayoutCommunity();
                 if (getPointsTextField().getText().trim().length() > 0 || randomNetworkGeneration)
                 {
                     
@@ -776,6 +901,22 @@ public class OpenDataSetDialog extends JDialog {
 
                             int idNovo = 0;
                             
+                            //Usado tanto na resolução dinâmica quanto no edge sampling
+                            if(windowSizeTextbox != null && !windowSizeTextbox.getText().equals(""))
+                                NetLayoutInlineNew.windowSizeValue = Integer.parseInt(windowSizeTextbox.getText());
+                            
+                            //Resolucao dinamica na rede estática
+                            if(whichResolution.getSelectedIndex() == 3) //Resolucao dinamica: aciona flag indicando que é dinâmica e lê na resolução original.
+                            {
+                                NetLayoutInlineNew.isResolucaoDinamica = true;
+                                NetLayoutInlineNew.fadingFactor = Double.parseDouble(fadingFactorTextBox.getText());
+                                //NetLayoutInlineNew.windowSizeValue = Integer.parseInt(windowSizeTextbox.getText());
+                                NetLayoutInlineNew.resolucaoDinamicaRedeEstatica = true;
+                                NetLayoutInlineNew.linegraphStream =  new int[NetLayoutInlineNew.windowSizeValue];
+                                resolutionSpinner.setValue(1);
+                                System.out.println(">>>>>>>  " + NetLayoutInlineNew.fadingFactor + " - " + NetLayoutInlineNew.windowSizeValue);
+                            }
+                            
                             ArrayList<String> arestasRede = new ArrayList<>();
                             if(randomNetworkGeneration)
                             {
@@ -783,6 +924,10 @@ public class OpenDataSetDialog extends JDialog {
                                 
                             }
                             Iterator itr = arestasRede.iterator();
+                            HashMap<Integer,Integer> qtdArestasPorTimestamp = new HashMap();
+                            
+                            int menorTempoInt = Integer.parseInt(jTextField1.getText());
+                            int maiorTempoInt = Integer.parseInt(jTextField2.getText());
                                 
                                 while(true) {
                                     
@@ -803,56 +948,176 @@ public class OpenDataSetDialog extends JDialog {
                                     }
                                     else
                                         continue;
-                                    
+                                   
                                     coluna = new ArrayList<>();
                                     String[] tokens = line.split("[ \\t]");
 
                                     if(tokens[0].equals(tokens[1])) //Ignora arestas de um nó pra ele mesmo. Motivo: Não funciona no CNO pois a detecção de comunidade não aceita isso (no layout, esses nós ficam sobrepostos na posição origem)
-                                        return;
+                                        continue;
 
-                                    coluna.add(Integer.parseInt(tokens[0]));
-                                    coluna.add(Integer.parseInt(tokens[1]));
+                                    int no1Int = Integer.parseInt(tokens[0]);
+                                    coluna.add(no1Int);
+                                    int no2Int = Integer.parseInt(tokens[1]);
+                                    coluna.add(no2Int);
+                                    int tempoArestaInt = Integer.parseInt(tokens[2]);
 
 
 
-                                    if((Integer.parseInt(tokens[2]) >= Integer.parseInt(jTextField1.getText())) && (Integer.parseInt(tokens[2]) <= Integer.parseInt(jTextField2.getText()))){
+                                    if((tempoArestaInt >= menorTempoInt) && (tempoArestaInt <= maiorTempoInt)){
 
-                                        int t = Integer.parseInt(tokens[2]) - Integer.parseInt(jTextField1.getText());
+                                        int t = tempoArestaInt - menorTempoInt;
                                         tokens[2] = t+"";
+                                        
+                                        int resolutionSpinnerValue = (int) resolutionSpinner.getValue();
 
-                                        if(!resolutionSpinner.getValue().equals("1"))
+                                        if(resolutionSpinnerValue != 1)
                                         {
-                                            t = (int) Math.floor(Integer.parseInt(tokens[2]) / Integer.parseInt(resolutionSpinner.getValue().toString()));
+                                            t = (int) Math.floor(tempoArestaInt / resolutionSpinnerValue);
                                             tokens[2] = t + "";
 
                                         }
                                         String lineAtual = tokens[0]+" "+tokens[1]+" "+tokens[2];
                                         if(!lastline.equals(lineAtual))
                                         {
-                                            coluna.add(Integer.parseInt(tokens[2]));
+                                            coluna.add(t);
                                             if(!matrizDataInline.contains(coluna))
                                             {
                                                 matrizDataInline.add(id, coluna);
                                                 id++;
                                                 lastline = lineAtual;
+                                                
+                                                if(id%10000 == 0)
+                                                    System.out.println(id + " edges added so far.");
+                                                
+                                                if(qtdArestasPorTimestamp.containsKey(t))
+                                                    qtdArestasPorTimestamp.put(t, qtdArestasPorTimestamp.get(t) + 1);
+                                                else
+                                                    qtdArestasPorTimestamp.put(t, 1);
                                             }
                                         }
                                     }
                                     else
                                         continue;
 
-                                    if (!vetorIdNodesNormalizados.containsKey(Integer.parseInt(tokens[0]))) {
-                                        vetorIdNodesNormalizados.put(Integer.parseInt(tokens[0]),idNovo);
+                                    
+                                    
+                                    if (!vetorIdNodesNormalizados.containsKey(no1Int)) {
+                                        vetorIdNodesNormalizados.put(no1Int,idNovo);
                                         idNovo++;
                                     }
-                                    if (!vetorIdNodesNormalizados.containsKey(Integer.parseInt(tokens[1]))) {
-                                        vetorIdNodesNormalizados.put(Integer.parseInt(tokens[1]),idNovo);
+                                    if (!vetorIdNodesNormalizados.containsKey(no2Int)) {
+                                        vetorIdNodesNormalizados.put(no2Int,idNovo);
                                         idNovo++;
                                     }
                                     coluna = new ArrayList<>();
                                     
                                 }
+                                progressBar.setValue(25);
                                 matrizDataInline = ordenaMatriz(matrizDataInline);
+                                
+                                ArrayList<Integer> columnM = matrizDataInline.get(matrizDataInline.size()-1);
+                                int lastTime = columnM.get(2);
+                                
+                                String qtdArestasPerTime = "";
+                                for(int x = 0; x <= lastTime;x++)
+                                {
+                                    int qtdArestasNesseTimestamp = 0;
+                                    if(qtdArestasPorTimestamp.containsKey(x))
+                                        qtdArestasNesseTimestamp = qtdArestasPorTimestamp.get(x);
+                                 //    double proporcaoArestasNesseTimestamp = (double) qtdArestasNesseTimestamp/(double)matrizDataInline.size();
+                                      qtdArestasPerTime += qtdArestasNesseTimestamp + "\r\n";
+                                  //  qtdArestasPerTime += proporcaoArestasNesseTimestamp + "\r\n";
+                                }                               
+                                //util.FileHandler.gravaArquivo(qtdArestasPerTime, "F:\\qtdArestasPerTime.txt", true);
+                                
+                            /*    
+                                String linegraphNone = "";
+                                ArrayList<Double> proporcaoArestasNoTempo = new ArrayList<>();
+                                for(int x = 0; x <= lastTime;x++)
+                                {
+                                    int qtdArestasNesseTimestamp = 0;
+                                    if(qtdArestasPorTimestamp.containsKey(x))
+                                        qtdArestasNesseTimestamp = qtdArestasPorTimestamp.get(x);
+                                    double proporcaoArestasNesseTimestamp = (double) qtdArestasNesseTimestamp/(double)matrizDataInline.size();
+                                    proporcaoArestasNoTempo.add(proporcaoArestasNesseTimestamp);
+                                    linegraphNone += (proporcaoArestasNesseTimestamp*100.0) + "\r\n";
+                                }
+                                util.FileHandler.gravaArquivo(linegraphNone, "F:\\porcentagemArestasTempoRedeOriginal_Res" + resolutionSpinner.getValue() + ".txt", true);
+        */
+                            
+                            
+                                    
+                                if(whichResolution.getSelectedIndex() == 2) //Wang's approach
+                                {
+                                   
+                                    String linegraphNone = "";
+                                    ArrayList<Double> proporcaoArestasNoTempo = new ArrayList<>();
+                                    for(int x = 0; x <= lastTime;x++)
+                                    {
+                                        int qtdArestasNesseTimestamp = 0;
+                                        if(qtdArestasPorTimestamp.containsKey(x))
+                                            qtdArestasNesseTimestamp = qtdArestasPorTimestamp.get(x);
+                                        double proporcaoArestasNesseTimestamp = (double) qtdArestasNesseTimestamp/(double)matrizDataInline.size();
+                                        proporcaoArestasNoTempo.add(proporcaoArestasNesseTimestamp);
+                                        linegraphNone += (proporcaoArestasNesseTimestamp*100.0) + "\r\n";
+                                    }
+                                //util.FileHandler.gravaArquivo(linegraphNone, "F:\\porcentagemArestasTempoRedeOriginal_Res" + resolutionSpinner.getValue() + ".txt", true);
+        
+                                    
+                                    //Nonuniform Timeslicing of Dynamic Graphs Based on Visual Complexity -- Wang et al 2019
+                                    double a = 0;
+                                    ArrayList<Double> cumulativeDistribution = new ArrayList();
+                                    for(int x = 0; x <= lastTime;x++) //Eq 6
+                                    {
+                                        a += proporcaoArestasNoTempo.get(x);
+                                        cumulativeDistribution.add(a);
+                                    }
+
+                                    String novaDistribuicao = "";
+                                    for(int x = 0; x <= lastTime;x++) //Eq 7
+                                    {
+                                        proporcaoArestasNoTempo.set(x, Math.floor(cumulativeDistribution.get(x) * (lastTime -1)));
+                                        novaDistribuicao += proporcaoArestasNoTempo.get(x) + "\r\n";
+                                    }
+                                   
+
+                                    // x -> valor(x)
+                                    ArrayList<ArrayList<Integer>> novaMatrizDataInline = new ArrayList();
+                                    
+                                    qtdArestasPorTimestamp = new HashMap();
+                                    
+                                    for(ArrayList<Integer> aresta : matrizDataInline)
+                                    {
+                                        ArrayList<Integer> novaAresta = new ArrayList();
+                                        int tempoN = (int) Math.round(proporcaoArestasNoTempo.get(aresta.get(2)));
+                                        novaAresta.add(aresta.get(0));
+                                        novaAresta.add(aresta.get(1));
+                                        novaAresta.add(tempoN);
+                                        if(!novaMatrizDataInline.contains(novaAresta))
+                                        {
+                                            novaMatrizDataInline.add(novaAresta);
+                                            if(qtdArestasPorTimestamp.containsKey(tempoN))
+                                                    qtdArestasPorTimestamp.put(tempoN, qtdArestasPorTimestamp.get(tempoN) + 1);
+                                                else
+                                                    qtdArestasPorTimestamp.put(tempoN, 1);
+                                        }
+                                    }
+                                    matrizDataInline = ordenaMatriz(novaMatrizDataInline);
+                                    
+                                    proporcaoArestasNoTempo = new ArrayList<>();
+                                    linegraphNone = "";
+                                    for(int x = 0; x <= lastTime;x++)
+                                    {
+                                        int qtdArestasNesseTimestamp = 0;
+                                        if(qtdArestasPorTimestamp.containsKey(x))
+                                            qtdArestasNesseTimestamp = qtdArestasPorTimestamp.get(x);
+                                        double proporcaoArestasNesseTimestamp = (double) qtdArestasNesseTimestamp/(double)matrizDataInline.size();
+                                        proporcaoArestasNoTempo.add(proporcaoArestasNesseTimestamp);
+                                        linegraphNone += (proporcaoArestasNesseTimestamp*100.0) + "\r\n";
+                                    }
+                                    //util.FileHandler.gravaArquivo(linegraphNone, "F:\\porcentagemArestasTempoRedeWang.txt", true);
+        
+                                }
                             } catch (FileNotFoundException ex) {
                                 System.out.println(ex.getMessage());
                             } catch (IOException ex) {
@@ -863,10 +1128,12 @@ public class OpenDataSetDialog extends JDialog {
                               frame.matrizData.addAll(matrizDataInline);
                               
 
-                              netInline.NetLayoutInlineNew(matrizDataInline, 1, 15,false);
+                              progressBar.setValue(30);
+                              
+                              netInline.NetLayoutInlineNew(matrizDataInline, false, frame);
                               netInline.vetorIdNodesNormalizados = vetorIdNodesNormalizados;
                               
-                              
+                              progressBar.setValue(70);
                               Integer[][] adjacencyMatrix = new Integer[netInline.lineNodes.size()][netInline.lineNodes.size()];
                               for(int i = 0; i < adjacencyMatrix.length; i++)
                               {
@@ -903,12 +1170,12 @@ public class OpenDataSetDialog extends JDialog {
                               String minutos = String.format("%d min, %d sec", new Object[] { Long.valueOf(TimeUnit.MILLISECONDS.toMinutes(milliseconds)), Long.valueOf(TimeUnit.MILLISECONDS.toSeconds(milliseconds) - TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(milliseconds))) });
 
                               
-                              progressBar.setValue(50);
+                              progressBar.setValue(90);
 
                               System.out.println("Tempo para rodar o algoritmo de abrir o arquivo: " + getPointsTextField().getText() + ": " + minutos);
 
                                long tempoVisualizacao = System.currentTimeMillis();
-
+                              NetLayout net = null;
                               net = new NetLayout(getPointsTextField().getText(), netInline.matrizDataInline, frame);
                               net.setResolution(Integer.parseInt(resolutionSpinner.getValue().toString()));
                               //frame.CountOfNetworkResolution.setText(resolutionSpinner.getValue().toString());
@@ -922,7 +1189,7 @@ public class OpenDataSetDialog extends JDialog {
                               frame.nameFile = randomNetworkGeneration ? "Random Generated Network" : filePath.getName().substring(0,filePath.getName().length()-4);
                               //frame.networkNameLabel.setText(frame.nameFile);
                               
-                              progressBar.setValue(75);
+                              progressBar.setValue(95);
 
 
                               //Line Graph
@@ -936,6 +1203,8 @@ public class OpenDataSetDialog extends JDialog {
                               frame.setPathDataset(getPointsTextField().getText());
                               frame.showHideButtons(true);
                               frame.resetFlags();
+                              if(whichResolution.getSelectedIndex() == 3)
+                                frame.scalarCombo7.addItem("Adaptive Res.");
                               text = getPointsTextField().getText();
 
 
@@ -990,6 +1259,99 @@ public class OpenDataSetDialog extends JDialog {
                               
                               f.setVisible(false);
 
+                    }
+                    else if(selectedLayout.equals("Community")) //open only the community file and visualization
+                    {
+                        
+                        JOptionPane.showMessageDialog(null, "Please select the metadata file for the selected network. More information about file format in the Information tab.", "Warning", JOptionPane.WARNING_MESSAGE);
+                        
+                        JFileChooser openDialog = new JFileChooser();
+                        String filename = "";
+
+                        openDialog.resetChoosableFileFilters();
+                        openDialog.setAcceptAllFileFilterUsed(false);
+                        openDialog.setFileFilter(new FileNameExtensionFilter("Text files","txt"));
+                        openDialog.setMultiSelectionEnabled(false);
+                        openDialog.setDialogTitle("Open file");
+
+                        openDialog.setSelectedFile(new File(filename));
+                        openDialog.setCurrentDirectory(new File(filename));
+
+                        int result = openDialog.showOpenDialog(null);
+                        if (result == JFileChooser.APPROVE_OPTION) {
+                            
+                            ArrayList<Integer> coluna = new ArrayList<>();
+                            
+                            BufferedReader file;
+                            
+                            try {
+                                file = new BufferedReader(new FileReader(new File(getPointsTextField().getText())));
+                                String line;
+                                
+                                while((line = file.readLine()) != null) {
+                                    
+                                    if(!line.equals(("")))
+                                    {
+                                        if(!Character.isDigit(line.charAt(0)))
+                                            continue;
+                                    }
+                                    else
+                                        continue;
+                                    String[] tokens = line.split("[ \\t]");
+                                    coluna.add(Integer.parseInt(tokens[0])); //origem
+                                    coluna.add(Integer.parseInt(tokens[1])); //destino
+                                    coluna.add(Integer.parseInt(tokens[2])); //tempo
+
+                                    matrizDataInline.add(coluna);
+
+                                    coluna = new ArrayList<>();
+                                }
+                                
+                                matrizDataInline = ordenaMatriz(matrizDataInline);
+                                
+                            } catch (FileNotFoundException ex) {
+                                System.out.println(ex.getMessage());
+                            } catch (IOException ex) {
+                                System.out.println(ex.getMessage());
+                            }
+
+                            //INICIA ARQUIVO PARA ADICIONAR LABELS NOS NÓS
+                            filename = openDialog.getSelectedFile().getAbsolutePath();
+                            openDialog.setSelectedFile(new File(""));
+
+                            try {
+                                file = new BufferedReader(new FileReader(new File(filename)));
+                                String tmp, strLine = "";
+                                while ((strLine = file.readLine()) != null)
+                                {
+                                    String[] tokens = strLine.split("[ \\t]");
+                                    matrizRolutos.put(Long.parseLong(tokens[0]), tokens[1]);
+                                }
+                            } catch (FileNotFoundException ex) {
+                                //Logger.getLogger(OpenDataSetDialog.class.getName()).log(Level.SEVERE, null, ex);
+                            } catch (IOException ex) {
+                                //Logger.getLogger(OpenDataSetDialog.class.getName()).log(Level.SEVERE, null, ex);
+                            }
+
+                            netLayoutCommunity.NetLayoutCommunity(matrizDataInline,matrizRolutos);
+                            
+                            progressBar.setValue(50);
+
+                            frame.setNetLayoutCommunity(netLayoutCommunity);
+                            frame.setPathDataset(getPointsTextField().getText());
+                            frame.showHideButtons(true);
+                            frame.showHideCommunityButtons(true);
+                            
+                            frame.jTabbedPane.setEnabledAt(3, true);
+                            frame.jTabbedPane.setSelectedIndex(3);
+                            
+                            text = getPointsTextField().getText();
+
+                            progressBar.setValue(99);
+
+                            f.setVisible(false);
+                        }
+                        
                     }
                 }
                 else if(!randomNetworkGeneration) //Nenhuma rede gerada
@@ -1071,10 +1433,6 @@ public class OpenDataSetDialog extends JDialog {
         }
         jTextField2.setText(maximumTime.getValue()+"");
     }//GEN-LAST:event_maximumTimeStateChanged
-
-    private void resolutionSpinnerStateChanged(javax.swing.event.ChangeEvent evt) {//GEN-FIRST:event_resolutionSpinnerStateChanged
-
-    }//GEN-LAST:event_resolutionSpinnerStateChanged
 
     boolean randomNetworkGeneration = false;
     String randomNetworkData = "";
@@ -1194,7 +1552,81 @@ public class OpenDataSetDialog extends JDialog {
             
         }
     }//GEN-LAST:event_modelGenerateNetworkActionPerformed
+
+    private void ffSliderStateChanged(javax.swing.event.ChangeEvent evt) {//GEN-FIRST:event_ffSliderStateChanged
+        fadingFactorTextBox.setText(ffSlider.getValue()/1000.0 +"");
+    }//GEN-LAST:event_ffSliderStateChanged
+
+    private void wsizeSliderStateChanged(javax.swing.event.ChangeEvent evt) {//GEN-FIRST:event_wsizeSliderStateChanged
+
+        windowSizeTextbox.setText(wsizeSlider.getValue()+"");
+    }//GEN-LAST:event_wsizeSliderStateChanged
+
+    private void resolutionSpinnerStateChanged(javax.swing.event.ChangeEvent evt) {//GEN-FIRST:event_resolutionSpinnerStateChanged
+
+    }//GEN-LAST:event_resolutionSpinnerStateChanged
+
+    private void whichResolutionActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_whichResolutionActionPerformed
+        
+        showHideResolutionFuncionalities(whichResolution.getSelectedIndex());
+        
+    }//GEN-LAST:event_whichResolutionActionPerformed
     
+    private void showHideResolutionFuncionalities(int chosenResolution)
+    {
+        switch (chosenResolution) {
+            case 1: //Static
+                jLabel5.setEnabled(true);
+                resolutionSpinner.setEnabled(true);
+                jLabel7.setEnabled(false);
+                jLabel8.setEnabled(false);
+                wsizeSlider.setEnabled(false);
+                ffSlider.setEnabled(false);
+                windowSizeTextbox.setEnabled(false);
+                fadingFactorTextBox.setEnabled(false);
+                OKButton1.setEnabled(true);
+                break;
+        
+            case 2: //Wang et al's histogram approach
+                OKButton1.setEnabled(true);
+                
+                jLabel5.setEnabled(false);
+                resolutionSpinner.setEnabled(false);
+                jLabel7.setEnabled(false);
+                jLabel8.setEnabled(false);
+                wsizeSlider.setEnabled(false);
+                ffSlider.setEnabled(false);
+                windowSizeTextbox.setEnabled(false);
+                fadingFactorTextBox.setEnabled(false);
+                
+                break;
+            case 3: //Our Adaptive Resolution
+                jLabel5.setEnabled(false);
+                resolutionSpinner.setEnabled(false);
+                jLabel7.setEnabled(true);
+                jLabel8.setEnabled(true);
+                wsizeSlider.setEnabled(true);
+                ffSlider.setEnabled(true);
+                windowSizeTextbox.setEnabled(true);
+                windowSizeTextbox.setEditable(false);
+                fadingFactorTextBox.setEnabled(true);
+                fadingFactorTextBox.setEditable(false);
+                OKButton1.setEnabled(true);
+                break;
+            default:
+                OKButton1.setEnabled(false);
+                
+                jLabel5.setEnabled(false);
+                resolutionSpinner.setEnabled(false);
+                jLabel7.setEnabled(false);
+                jLabel8.setEnabled(false);
+                wsizeSlider.setEnabled(false);
+                ffSlider.setEnabled(false);
+                windowSizeTextbox.setEnabled(false);
+                fadingFactorTextBox.setEnabled(false);
+                break;
+        }
+    }
     
     private void showHideFuncionalities(boolean temporalnetwork)
     {
@@ -1223,16 +1655,21 @@ public class OpenDataSetDialog extends JDialog {
         jLabel3.setEnabled(state);
         jLabel2.setEnabled(state);
         jTextField1.setEnabled(state);
+        jTextField1.setEditable(false);
         minimumTime.setEnabled(state);
         jLabel4.setEnabled(state);
         jTextField2.setEnabled(state);
+        jTextField2.setEditable(false);
         maximumTime.setEnabled(state);
         jLabel10.setEnabled(state);
-        jLabel5.setEnabled(state);
-        resolutionSpinner.setEnabled(state);
-        OKButton1.setEnabled(state);
+        whichResolution.setEnabled(state);
+        
+    
+        
         if(!state)
             pointsTextField.setText("");
+        
+        whichResolution.setEnabled(state);
     }
     
     public static OpenDataSetDialog getInstance(MainForm t) {
@@ -1258,12 +1695,13 @@ public class OpenDataSetDialog extends JDialog {
     private javax.swing.ButtonGroup buttonGroup1;
     public javax.swing.JPanel buttonPanel1;
     public javax.swing.JButton cancelButton1;
+    private javax.swing.JTextField fadingFactorTextBox;
+    private javax.swing.JSlider ffSlider;
     protected javax.swing.JComboBox formCombo1;
     private javax.swing.JButton jButton4;
     private javax.swing.JLabel jLabel1;
     private javax.swing.JLabel jLabel10;
     private javax.swing.JLabel jLabel14;
-    private javax.swing.JLabel jLabel15;
     private javax.swing.JLabel jLabel2;
     private javax.swing.JLabel jLabel23;
     private javax.swing.JLabel jLabel24;
@@ -1272,6 +1710,8 @@ public class OpenDataSetDialog extends JDialog {
     private javax.swing.JLabel jLabel4;
     private javax.swing.JLabel jLabel5;
     private javax.swing.JLabel jLabel6;
+    private javax.swing.JLabel jLabel7;
+    private javax.swing.JLabel jLabel8;
     public javax.swing.JPanel jPanel1;
     private javax.swing.JPanel jPanel2;
     private javax.swing.JPanel jPanel3;
@@ -1287,6 +1727,9 @@ public class OpenDataSetDialog extends JDialog {
     private javax.swing.JTextField pointsTextField;
     private javax.swing.JSpinner resolutionSpinner;
     public javax.swing.JPanel sourcePanel;
+    private javax.swing.JComboBox<String> whichResolution;
+    private javax.swing.JTextField windowSizeTextbox;
+    private javax.swing.JSlider wsizeSlider;
     // End of variables declaration//GEN-END:variables
 
     /**
@@ -1295,5 +1738,7 @@ public class OpenDataSetDialog extends JDialog {
     public javax.swing.JTextField getPointsTextField() {
         return pointsTextField;
     }
-
+    
+    
+    
 }

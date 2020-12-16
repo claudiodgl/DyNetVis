@@ -72,7 +72,7 @@ public class ConverterArquivosEntrada {
      * @param args the command line arguments
      */
     
-    static String claudio = "C:\\Users\\Claudio Linhares\\Documents\\escola";
+    static String claudio = ""; //C:\\Users\\Claudio Linhares\\Documents\\escola";
     
     public static void main(String[] args) {
         
