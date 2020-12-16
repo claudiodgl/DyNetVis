@@ -48,16 +48,27 @@
  * ***** END LICENSE BLOCK ***** */
 package forms;
 
+import com.mxgraph.canvas.mxGraphics2DCanvas;
+import com.mxgraph.canvas.mxICanvas;
+import com.mxgraph.canvas.mxSvgCanvas;
 import com.mxgraph.swing.mxGraphComponent;
 import com.mxgraph.util.mxCellRenderer;
+import com.mxgraph.util.mxCellRenderer.CanvasFactory;
+import com.mxgraph.util.mxDomUtils;
+import com.mxgraph.util.mxRectangle;
+import com.mxgraph.util.mxUtils;
+import com.mxgraph.util.mxXmlUtils;
 import com.mxgraph.view.mxGraph;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Container;
 import java.awt.Dimension;
+import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
@@ -71,6 +82,7 @@ import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.JProgressBar;
 import javax.swing.border.Border;
+import javax.swing.text.Document;
 
 public class ExportImg extends JDialog {
     
@@ -165,7 +177,7 @@ public class ExportImg extends JDialog {
         jLabel1.setRequestFocusEnabled(false);
         property.add(jLabel1);
 
-        jComboBox1.setModel(new javax.swing.DefaultComboBoxModel(new String[] { "PNG", "JPG", "GIF" }));
+        jComboBox1.setModel(new javax.swing.DefaultComboBoxModel(new String[] { "PNG", "JPG", "GIF", "SVG" }));
         jComboBox1.setPreferredSize(new java.awt.Dimension(80, 20));
         property.add(jComboBox1);
 
@@ -234,6 +246,8 @@ public class ExportImg extends JDialog {
             graph = t.vvCentrality;
         else if(isMatrix)
             graph = t.vvMatrix;
+        else if(isCommunity)
+            graph = t.vvCommunity;
         else
             graph = t.vv;
         
@@ -247,7 +261,7 @@ public class ExportImg extends JDialog {
         
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(Calendar.getInstance().getTime());
         
-        filename += timeStamp;
+        filename = timeStamp;
         
         
         String filenameTemp = filename;
@@ -258,6 +272,8 @@ public class ExportImg extends JDialog {
             filenameTemp = "stream_" + filenameTemp;
         else if(isMatrix)
             filenameTemp = "matrix_" + filenameTemp;
+        else if(isCommunity)
+            filenameTemp = "community_layout";
         else
             filenameTemp = "structural_" + filenameTemp;
         
@@ -267,13 +283,14 @@ public class ExportImg extends JDialog {
         String[] parts = nameFile.split("\\\\");
         String a = parts[parts.length-1];
         String[] aa = a.split("\\.");
+        aa[0] = aa[0].replaceAll(":","");
         filenameTemp = aa[0] + "_" + filenameTemp+"."+formatSelect;
         
         final JFileChooser openDialog = new JFileChooser();
         
         openDialog.setDialogTitle("Save");
         
-        openDialog.setSelectedFile(new File(filenameTemp));
+        openDialog.setSelectedFile(new File(t.getPathDataset()+"//"+filenameTemp));
         openDialog.setCurrentDirectory(new File(filenameTemp));
        
         int result = openDialog.showSaveDialog(this);
@@ -291,14 +308,25 @@ public class ExportImg extends JDialog {
 
             double scale = Double.parseDouble(scaleTextField.getText());
             
+            
+            
             //progressBar.setValue(50);
 
 
             try {
                 BufferedImage image = mxCellRenderer.createBufferedImage(graph.getGraph(), null, scale, background.getBackground(), true, null);
                 formatSelect = jComboBox1.getSelectedItem().toString();
-                //progressBar.setValue(99);
-                ImageIO.write(image, formatSelect, new File(urlFile));
+                
+                if(formatSelect.equals("SVG"))
+                {
+                    
+                    createSVG(graph.getGraph(),urlFile);
+                   
+                }
+                else{
+                    //progressBar.setValue(99);
+                    ImageIO.write(image, formatSelect, new File(urlFile));
+                }
                 //f.setVisible(false);
                 JOptionPane.showMessageDialog(null, "Done.", "Info", 1);
 
@@ -321,6 +349,24 @@ public class ExportImg extends JDialog {
         }
     }//GEN-LAST:event_pointsButtonActionPerformed
 
+    public void createSVG(mxGraph g, String filename) {
+        
+        mxSvgCanvas canvas = (mxSvgCanvas) mxCellRenderer.drawCells(
+          g, null, 1, null, new CanvasFactory() {
+          public mxICanvas createCanvas(int width, int height) {
+              mxSvgCanvas canvas = new mxSvgCanvas(mxDomUtils
+                  .createSvgDocument(width, height));
+                  canvas.setEmbedded(true);
+                  return canvas;
+              } 
+          });
+        try {
+          mxUtils.writeFile(mxXmlUtils.getXml(canvas.getDocument()), filename);
+        } catch (IOException e) {
+          e.printStackTrace();
+        } 
+    }
+    
     public void exportImgAutomaticallyInStream(mxGraph grafo, String diretorio, String arquivo, String qualLayout)
     {
         //graph = t.graphComponentS;
@@ -390,6 +436,11 @@ public class ExportImg extends JDialog {
         {
             background.setBackground(t.vvMatrix.getViewport().getBackground());
             this.setTitle("Export Matrix Image");
+        }
+        else if(isCommunity)
+        {
+            background.setBackground(t.vvCommunity.getViewport().getBackground());
+            this.setTitle("Export Community Image");
         }
         else
         {

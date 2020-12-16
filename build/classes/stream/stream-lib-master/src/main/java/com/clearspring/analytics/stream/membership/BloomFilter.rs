@@ -1,0 +1,2 @@
+com.clearspring.analytics.stream.membership.BloomFilter
+com.clearspring.analytics.stream.membership.BloomFilterSerializer

@@ -81,6 +81,8 @@ public class SelectedNodes extends javax.swing.JDialog {
 
     private MainForm frame;
     private Object[] roots;
+    public ArrayList<String> idsSelecionadosArray = new ArrayList();
+    
     /**
      * Creates new form SelectedNodes
      */
@@ -181,7 +183,7 @@ public class SelectedNodes extends javax.swing.JDialog {
         openDialog.setDialogTitle("Save");
         
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(Calendar.getInstance().getTime());
-        openDialog.setSelectedFile(new File("selectedNodes_" + timeStamp + ".txt"));
+        openDialog.setSelectedFile(new File(frame.getPathDataset()+"//"+"selectedNodes_" + timeStamp + ".txt"));
         openDialog.setFileFilter(new FileNameExtensionFilter("txt file","txt"));
        
         int result = openDialog.showSaveDialog(this);
@@ -196,7 +198,7 @@ public class SelectedNodes extends javax.swing.JDialog {
             String nosTextArea = selectedNodes.getText();
             nosTextArea = nosTextArea.substring(1, nosTextArea.length()-1); //Tira [ e ]
             String[] idsSelecionados = nosTextArea.split(", ");
-            ArrayList<String> idsSelecionadosArray = new ArrayList<String>(Arrays.asList(idsSelecionados));
+            idsSelecionadosArray = new ArrayList<String>(Arrays.asList(idsSelecionados));
             
             String conteudoArquivo = "// nodeID;status\tstatus = 1 if node is selected and 0 otherwise.\r\n\r\n";
             String id;

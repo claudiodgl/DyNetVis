@@ -60,12 +60,18 @@ import forms.MainForm;
 import forms.OpenDataSetDialog;
 import java.awt.*;
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Observable;
 import java.util.Random;
@@ -75,6 +81,7 @@ import javax.swing.ImageIcon;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import javax.swing.JSpinner;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import layout.NetLayoutInlineNew.JGraphStyle;
 import util.FileHandler;
 import visualizationbasics.color.BlueSkyToOrange;
@@ -96,7 +103,21 @@ import visualizationbasics.color.RainbowScale;
  *
  * @author Claudio Linhares
  */
-public class NetLayout extends Observable {
+public class NetLayout extends Observable{
+
+    /**
+     * @return the sizeIdNode
+     */
+    public String getSizeIdNode() {
+        return sizeIdNode;
+    }
+
+    /**
+     * @param sizeIdNode the sizeIdNode to set
+     */
+    public void setSizeIdNode(String sizeIdNode) {
+        this.sizeIdNode = sizeIdNode;
+    }
     
     public NetLayout(){
         
@@ -120,7 +141,7 @@ public class NetLayout extends Observable {
     private boolean typeGraph;
     private float alpha;
     private int currentTime, inicialTime;
-    private String typeColor,typeColorEdge,color,colorEdge,sizeNode, sizeEdge;
+    private String typeColor,typeColorEdge,color,colorEdge,sizeNode, sizeEdge, weightEdge = "Degree",sizeIdNode;
    
     public void setColor(String color){
         this.color = color;
@@ -295,6 +316,31 @@ public class NetLayout extends Observable {
     }
     
     
+    final public void changeSizeIdNodes(){
+        graph2.getModel().beginUpdate();
+        int sizeIdNode = 1;
+        if(getSizeIdNode().equals("Original")){
+            sizeIdNode = 10;
+        }
+        else if(getSizeIdNode().equals("Big")){
+            sizeIdNode = 100;
+        }
+        //All nodes graph
+        Object[] roots = graph2.getChildCells(graph2.getDefaultParent(), true, false);
+        for (Object root1 : roots) {
+            mxCell cell = (mxCell) root1;
+
+            String styleNode = cell.getStyle();
+            if(!styleNode.contains(mxConstants.STYLE_FONTSIZE))
+                styleNode += mxConstants.STYLE_FONTSIZE+"="+sizeIdNode+";";
+            else
+                styleNode = styleNode.replaceAll(mxConstants.STYLE_FONTSIZE+"=[^;]*;",mxConstants.STYLE_FONTSIZE+"="+sizeIdNode+";");
+            cell.setStyle(styleNode);
+        }
+        graph2.getModel().endUpdate();
+    }
+    
+    
     final public void changeColorNodes(){
         
         if(getColor().equals("Original") || getColor().equals("Bipartite") ){
@@ -360,18 +406,21 @@ public class NetLayout extends Observable {
         }
         else if(getColor().equals("Metadata File"))
         {
-            String[] communitiesColors = new String[100000];
+            //String[] communitiesColors = new String[100000];
+            HashMap<String,Integer> communitiesColors = new HashMap();
             
-            String[] colorsTable = new String[100];
-            String[] colorsLabel = new String[100];
+            //String[] colorsTable = new String[10000];
+            //String[] colorsLabel = new String[10000];
+            HashMap<Integer,String> colorsTable = new HashMap();
+            HashMap<Integer,String> colorsLable = new HashMap();
 
             JFileChooser openDialog = new JFileChooser();
             String filename = "";
+            filename = f.getPathDataset();
 
             openDialog.setMultiSelectionEnabled(false);
             openDialog.setDialogTitle("Open file");
-
-
+            
             openDialog.setSelectedFile(new File(filename));
             openDialog.setCurrentDirectory(new File(filename));
 
@@ -395,7 +444,34 @@ public class NetLayout extends Observable {
                     else
                     {
 
-
+                        //colorsTable.put(1,"000 000 255"); //blue
+                        //colorsTable.put(2,"000 255 000"); //green
+                        //colorsTable.put(0,"255 000 000"); //red
+                        
+                        colorsTable.put(0,"000 000 255"); //blue
+                        colorsTable.put(1,"000 255 000"); //green
+                        colorsTable.put(2,"255 000 000"); //red
+                        colorsTable.put(3,"255 185 60"); //orange
+                        colorsTable.put(4,"255 255 000"); //yellow
+                        colorsTable.put(5,"255 000 255"); //pink
+                        colorsTable.put(6,"100 070 000"); //brown
+                        colorsTable.put(7,"205 092 092"); //light pink
+                        colorsTable.put(8,"148 000 211"); //purple
+                        colorsTable.put(9,"000 255 255"); //cyan
+                        
+                        colorsTable.put(10,"000 000 000"); //Black
+                        colorsTable.put(11,"064 224 208"); //Turquoise
+                        colorsTable.put(12,"000 128 128"); //Teal
+                        colorsTable.put(13,"000 100 000"); //DarkGreen
+                        colorsTable.put(14,"085 107 047"); //DarkOliveGreen
+                        colorsTable.put(15,"218 165 032"); //Goldenrod
+                        colorsTable.put(16,"245 222 179"); //Wheat
+                        colorsTable.put(17,"075 000 130"); //Indigo
+                        colorsTable.put(18,"128 000 000"); //Maroon
+                        colorsTable.put(19,"255 215 000"); //Gold
+                        colorsTable.put(20,"240 230 140"); //Khaki
+                        
+                        /*
                         colorsTable[0] = "000 000 255"; //blue
                         colorsTable[1] = "000 255 000"; //green
                         colorsTable[2] = "255 000 000"; //red
@@ -418,7 +494,8 @@ public class NetLayout extends Observable {
                         colorsTable[18] = "128 000 000"; //Maroon
                         colorsTable[19] = "255 215 000"; //Gold
                         colorsTable[20] = "240 230 140"; //Khaki
-
+                        */
+                        
                         /*
                         colorsTable[0] = "229 115 115";
                         colorsTable[1] = "213 000 000";
@@ -455,15 +532,13 @@ public class NetLayout extends Observable {
                         colorsTable[10] = "000 000 000";
                          */
 
-                        for(int i = 21; i < colorsTable.length;i++)
-                        {
-                            colorsTable[i] = "000 000 000";
-                        }
 
                         int cont= 0;
 
-                        communitiesColors[Integer.parseInt(tokens[0])] = colorsTable[cont];
-                        colorsLabel[0] = tokens[1];
+                        communitiesColors.put(tokens[0], cont);
+                        colorsLable.put(0, tokens[1]);
+                        //communitiesColors[Integer.parseInt(tokens[0])] = colorsTable[cont];
+                        //colorsLabel[0] = tokens[1];
 
                         while ((tmp = file.readLine()) != null)
                         {
@@ -474,12 +549,26 @@ public class NetLayout extends Observable {
                             {
                                 tokens[1] = tokens2[1];
                                 cont++;
-                                colorsLabel[cont] = tokens2[1];
+                                colorsLable.put(cont, tokens2[1]);
+                                //colorsLabel[cont] = tokens2[1];
                             }
-                            communitiesColors[Integer.parseInt(tokens2[0])] = colorsTable[cont];
+                            communitiesColors.put(tokens2[0], cont);
+                            //communitiesColors[Integer.parseInt(tokens2[0])] = colorsTable[cont];
                         }
 
+                        for(int i = 21; i <= cont;i++)
+                        {
+                            
+                            Random rand = new Random();
+                            // Java 'Color' class takes 3 floats, from 0 to 1.
+                            float r = rand.nextFloat();
+                            float g = rand.nextFloat();
+                            float b = rand.nextFloat();
 
+                            Color color = new Color(r, g, b);
+
+                            colorsTable.put(i,color.getRed()+" "+color.getGreen()+" "+color.getBlue()+"");
+                        }
 
 
                         //All other nodes
@@ -523,19 +612,24 @@ public class NetLayout extends Observable {
                                 int r = 0;
                                 int g = 0;
                                 int b = 0;
-                                if(communitiesColors[Integer.parseInt(idCell)] != null)
+                                if(communitiesColors.get(idCell) != null)
                                 {
-                                    String color2 = communitiesColors[Integer.parseInt(idCell)];
+                                    String color2 = colorsTable.get(communitiesColors.get(idCell));
                                     tokens = color2.split(" ");
                                     r = Integer.parseInt(tokens[0]);
                                     g = Integer.parseInt(tokens[1]);
                                     b = Integer.parseInt(tokens[2]);
                                 }
+                                else
+                                {
+                                    System.out.println("no sem cor"); //os nós que possuem rotulo no arquivo de metadado vão ser pretos. Como preto já é a 11a primeira cor, vai ficar misturado.
+                                }
                                 Color colorNode = new Color(r,g,b);
                                 String hexColor = "#"+Integer.toHexString(colorNode.getRGB()).substring(2);
 
                                 String styleNode =  mxConstants.STYLE_FILLCOLOR+"="+hexColor+";";
-                                styleNode +=  mxConstants.STYLE_STROKECOLOR+"="+hexColor+";";
+                                //styleNode +=  mxConstants.STYLE_STROKECOLOR+"="+hexColor+";";
+                                styleNode +=  mxConstants.STYLE_STROKECOLOR+"=black;";
                                 styleNode += mxConstants.STYLE_EDITABLE+"=0;";
                                 styleNode += mxConstants.STYLE_RESIZABLE+"=0;";
                                 styleNode += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_ELLIPSE+";";
@@ -545,6 +639,12 @@ public class NetLayout extends Observable {
                                 else
                                     styleNode += mxConstants.STYLE_NOLABEL+"=1;";
 
+
+                                Color corEmNegativo = new Color(255 - colorNode.getRed(), 255 - colorNode.getGreen(), 255 - colorNode.getBlue());
+                                String hexColorNegative = "#"+Integer.toHexString(corEmNegativo.getRGB()).substring(2);
+
+                                //styleNode +=  mxConstants.STYLE_FONTCOLOR+"="+hexColorNegative+";";
+                                
                                 graph2.setCellStyle(styleNode, root);
                             }
                         }
@@ -572,7 +672,7 @@ public class NetLayout extends Observable {
                             int g = 0;
                             int b = 0;
 
-                            String color2 = colorsTable[communityColorId];
+                            String color2 = colorsTable.get(communityColorId);
                             tokens = color2.split(" ");
                             r = Integer.parseInt(tokens[0]);
                             g = Integer.parseInt(tokens[1]);
@@ -580,7 +680,7 @@ public class NetLayout extends Observable {
 
                             String label = "";
                             if(communityColorId < 10)
-                                label = colorsLabel[communityColorId];
+                                label = colorsLable.get(communityColorId);
 
                             communityColorId++;
                             Color colorNode = new Color(r,g,b);
@@ -625,6 +725,242 @@ public class NetLayout extends Observable {
             }
 
         }
+        else if(getColor().equals("Community"))
+        {
+            //String[] communitiesColors = new String[100000];
+            HashMap<String,Integer> communitiesColors = new HashMap();
+            
+            //String[] colorsTable = new String[10000];
+            //String[] colorsLabel = new String[10000];
+            HashMap<Integer,String> colorsTable = new HashMap();
+            HashMap<Integer,String> colorsLable = new HashMap();
+
+            colorsTable.put(0,"000 000 255"); //blue
+            colorsTable.put(1,"000 255 000"); //green
+            colorsTable.put(2,"255 000 000"); //red
+            colorsTable.put(3,"255 185 60"); //orange
+            colorsTable.put(4,"255 255 000"); //yellow
+            colorsTable.put(5,"255 000 255"); //pink
+            colorsTable.put(6,"100 070 000"); //brown
+            colorsTable.put(7,"205 092 092"); //light pink
+            colorsTable.put(8,"148 000 211"); //purple
+            colorsTable.put(9,"000 255 255"); //cyan
+
+            colorsTable.put(10,"000 000 000"); //Black
+            colorsTable.put(11,"064 224 208"); //Turquoise
+            colorsTable.put(12,"000 128 128"); //Teal
+            colorsTable.put(13,"000 100 000"); //DarkGreen
+            colorsTable.put(14,"085 107 047"); //DarkOliveGreen
+            colorsTable.put(15,"218 165 032"); //Goldenrod
+            colorsTable.put(16,"245 222 179"); //Wheat
+            colorsTable.put(17,"075 000 130"); //Indigo
+            colorsTable.put(18,"128 000 000"); //Maroon
+            colorsTable.put(19,"255 215 000"); //Gold
+            colorsTable.put(20,"240 230 140"); //Khaki
+
+            
+            Iterator it = communities.entrySet().iterator();
+            int cont= communities.size();
+            for(int i = 21; i <= cont;i++)
+            {
+
+                Random rand = new Random();
+                // Java 'Color' class takes 3 floats, from 0 to 1.
+                float r = rand.nextFloat();
+                float g = rand.nextFloat();
+                float b = rand.nextFloat();
+
+                Color color = new Color(r, g, b);
+
+                colorsTable.put(i,color.getRed()+" "+color.getGreen()+" "+color.getBlue()+"");
+            }
+
+            
+            //communitiesColors.put(tokens[0], cont);
+            //colorsLable.put(0, tokens[1]);
+            //communitiesColors[Integer.parseInt(tokens[0])] = colorsTable[cont];
+            //colorsLabel[0] = tokens[1];
+
+            
+            int newKey = 0, firstIteraction = 0;
+            String firstLabel = "";
+            while (it.hasNext()) {
+                Map.Entry pair = (Map.Entry)it.next();
+                ArrayList<InlineNodeAttribute> arr = (ArrayList) pair.getValue();
+                for(InlineNodeAttribute a : arr)
+                {
+                    communitiesColors.put(a.getId_original()+"",newKey);
+
+                    firstLabel = pair.getKey()+"";
+                    colorsLable.put(newKey, pair.getKey()+"");
+                }
+                newKey++;
+            }
+
+            /*
+            while ((tmp = file.readLine()) != null)
+            {
+
+                strLine = tmp;
+                String[] tokens2 = strLine.split(" ");
+                if(!tokens[1].equals(tokens2[1]))
+                {
+                    tokens[1] = tokens2[1];
+                    cont++;
+                    colorsLable.put(cont, tokens2[1]);
+                    //colorsLabel[cont] = tokens2[1];
+                }
+                communitiesColors.put(tokens2[0], cont);
+                //communitiesColors[Integer.parseInt(tokens2[0])] = colorsTable[cont];
+            }*/
+
+
+
+            //All other nodes
+            Object[] roots = graph2.getChildCells(graph2.getDefaultParent(), true, false);
+            graph2.getModel().beginUpdate();
+
+            mxCell firstNode = (mxCell) roots[0];
+
+            float vMax = Float.parseFloat(firstNode.getEdgeCount()+"");
+            float vMin = Float.parseFloat(firstNode.getEdgeCount()+"");
+            float maxColor = 1;
+            float minColor = 0;
+
+            for (Object root1 : roots) {
+                Object[] root = {root1};
+                mxCell cell = (mxCell) root1;
+                String idCell = cell.getId();
+                String[] parts = idCell.split(" ");
+                if(parts.length != 2 )
+                {
+                    int weightNode = cell.getEdgeCount();
+
+                    if(weightNode > vMax)
+                        vMax = weightNode;
+                    if(weightNode < vMin)
+                        vMin = weightNode;
+
+                }
+            }
+
+
+            for (Object root1 : roots) {
+                Object[] root = {root1};
+                mxCell cell = (mxCell) root1;
+                String idCell = cell.getId();
+                CustomAttributes att = (CustomAttributes) cell.getValue();
+
+                if(att.isNode())
+                {
+
+                    int r = 0;
+                    int g = 0;
+                    int b = 0;
+                    if(communitiesColors.get(idCell) != null)
+                    {
+                        String color2 = colorsTable.get(communitiesColors.get(idCell));
+                        String[] tokens = color2.split(" ");
+                        r = Integer.parseInt(tokens[0]);
+                        g = Integer.parseInt(tokens[1]);
+                        b = Integer.parseInt(tokens[2]);
+                    }
+                    else
+                    {
+                        //System.out.println("no sem cor");
+                    }
+                    Color colorNode = new Color(r,g,b);
+                    String hexColor = "#"+Integer.toHexString(colorNode.getRGB()).substring(2);
+
+                    String styleNode =  mxConstants.STYLE_FILLCOLOR+"="+hexColor+";";
+                    //styleNode +=  mxConstants.STYLE_STROKECOLOR+"="+hexColor+";";
+                    styleNode +=  mxConstants.STYLE_STROKECOLOR+"=black;";
+                    styleNode += mxConstants.STYLE_EDITABLE+"=0;";
+                    styleNode += mxConstants.STYLE_RESIZABLE+"=0;";
+                    styleNode += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_ELLIPSE+";";
+                    styleNode += mxConstants.STYLE_OPACITY+"=100;";
+                    if(showInstanceWeight)
+                        styleNode += mxConstants.STYLE_NOLABEL+"=0;";
+                    else
+                        styleNode += mxConstants.STYLE_NOLABEL+"=1;";
+
+
+                    Color corEmNegativo = new Color(255 - colorNode.getRed(), 255 - colorNode.getGreen(), 255 - colorNode.getBlue());
+                    String hexColorNegative = "#"+Integer.toHexString(corEmNegativo.getRGB()).substring(2);
+
+                    styleNode +=  mxConstants.STYLE_FONTCOLOR+"="+hexColorNegative+";";
+
+                    graph2.setCellStyle(styleNode, root);
+                }
+            }
+
+            graph2.getModel().endUpdate();
+
+
+
+             //Scalar Nodes
+            boolean firstBool = true;
+            String first = "";
+
+            int communityColorId = 0;
+
+            roots = graphComponentScalar.getGraph().getChildCells(graphComponentScalar.getGraph().getDefaultParent(), true, false);
+            graphComponentScalar.getGraph().getModel().beginUpdate();
+            for (Object root1 : roots) {
+                Object[] root = {root1};
+                mxCell cell = (mxCell) root1;
+                String idCell = cell.getId();
+
+                String[] parts = idCell.split(" ");
+
+                int r = 0;
+                int g = 0;
+                int b = 0;
+
+                String color2 = colorsTable.get(communityColorId);
+                String[] tokens = color2.split(" ");
+                r = Integer.parseInt(tokens[0]);
+                g = Integer.parseInt(tokens[1]);
+                b = Integer.parseInt(tokens[2]);
+
+                String label = "";
+                if(communityColorId < 11)
+                    label = colorsLable.get(communityColorId);
+
+                communityColorId++;
+                Color colorNode = new Color(r,g,b);
+                String hexColor = "#"+Integer.toHexString(colorNode.getRGB()).substring(2);
+
+                cell.setId(hexColor);
+
+                String styleNode = "";
+
+                styleNode +=  mxConstants.STYLE_FILLCOLOR+"="+hexColor+";";
+                styleNode +=  mxConstants.STYLE_STROKECOLOR+"="+hexColor+";";
+
+                styleNode += mxConstants.STYLE_MOVABLE+"=0;";
+                styleNode += mxConstants.STYLE_EDITABLE+"=0;";
+                styleNode += mxConstants.STYLE_RESIZABLE+"=0;";
+                styleNode += mxConstants.STYLE_NOLABEL+"=0;";
+
+                Color corEmNegativo = new Color(255 - colorNode.getRed(), 255 - colorNode.getGreen(), 255 - colorNode.getBlue());
+                String hexColorNegative = "#"+Integer.toHexString(corEmNegativo.getRGB()).substring(2);
+
+                styleNode +=  mxConstants.STYLE_FONTCOLOR+"="+hexColorNegative+";";
+                cell.setValue(label);
+
+                styleNode += mxConstants.STYLE_FONTSIZE+"=10;";
+                styleNode += mxConstants.STYLE_FONTSTYLE+"="+mxConstants.FONT_BOLD+";";
+                styleNode += mxConstants.STYLE_LABEL_POSITION+"="+mxConstants.ALIGN_CENTER+";";
+                styleNode += mxConstants.STYLE_VERTICAL_LABEL_POSITION+"="+mxConstants.ALIGN_CENTER+";";
+                styleNode += mxConstants.STYLE_SHAPE+"="+mxConstants.SHAPE_RECTANGLE+";";
+                styleNode += mxConstants.STYLE_OPACITY+"=100;";
+
+                graphComponentScalar.getGraph().setCellStyle(styleNode, root);
+            }
+            graphComponentScalar.getGraph().getModel().endUpdate();
+
+        }
         else if(getColor().equals("Random Color"))
         {
             
@@ -661,6 +997,12 @@ public class NetLayout extends Observable {
                         styleNode += mxConstants.STYLE_NOLABEL+"=0;";
                     else
                         styleNode += mxConstants.STYLE_NOLABEL+"=1;";
+                    
+                    
+                    Color corEmNegativo = new Color(255 - color.getRed(), 255 - color.getGreen(), 255 - color.getBlue());
+                    String hexColorNegative = "#"+Integer.toHexString(corEmNegativo.getRGB()).substring(2);
+                    styleNode +=  mxConstants.STYLE_FONTCOLOR+"="+hexColorNegative+";";
+                    
 
                     graph2.setCellStyle(styleNode, root);
                 }
@@ -888,7 +1230,11 @@ public class NetLayout extends Observable {
                         styleNode += mxConstants.STYLE_NOLABEL+"=0;";
                     else
                         styleNode += mxConstants.STYLE_NOLABEL+"=1;";
-
+                    
+                    Color corEmNegativo = new Color(255 - colorNode.getRed(), 255 - colorNode.getGreen(), 255 - colorNode.getBlue());
+                    String hexColorNegative = "#"+Integer.toHexString(corEmNegativo.getRGB()).substring(2);
+                    styleNode +=  mxConstants.STYLE_FONTCOLOR+"="+hexColorNegative+";";
+                    
                     graph2.setCellStyle(styleNode, root);
                 }
             }
@@ -903,15 +1249,16 @@ public class NetLayout extends Observable {
             
             roots = graphComponentScalar.getGraph().getChildCells(graphComponentScalar.getGraph().getDefaultParent(), true, false);
             graphComponentScalar.getGraph().getModel().beginUpdate();
+            float scalar_count = 0;
             for (Object root1 : roots) {
                 Object[] root = {root1};
                 mxCell cell = (mxCell) root1;
                 String idCell = cell.getId();
                 String[] parts = idCell.split(" ");
                 
-                Color colorNode = colorScale.getColor(Float.parseFloat(parts[1]));
+                Color colorNode = colorScale.getColor(scalar_count);
                 String hexColor = "#"+Integer.toHexString(colorNode.getRGB()).substring(2);
-
+                scalar_count += 0.1;
                 if(firstBool)
                 {
                     first = hexColor;
@@ -935,7 +1282,7 @@ public class NetLayout extends Observable {
                 styleNode += mxConstants.STYLE_RESIZABLE+"=0;";
                 styleNode += mxConstants.STYLE_NOLABEL+"=0;";
                 
-                 Color corEmNegativo = new Color(255 - colorNode.getRed(), 255 - colorNode.getGreen(), 255 - colorNode.getBlue());
+                Color corEmNegativo = new Color(255 - colorNode.getRed(), 255 - colorNode.getGreen(), 255 - colorNode.getBlue());
                 String hexColorNegative = "#"+Integer.toHexString(corEmNegativo.getRGB()).substring(2);
                 
                 if(cell.getId().equals("color 0")){
@@ -962,10 +1309,11 @@ public class NetLayout extends Observable {
             graphComponentScalar.getGraph().getModel().endUpdate();
             
         }
-        
+        graphComponentScalar.getGraph().repaint();
+        graphComponentScalar.getGraph().refresh();
     }
     
-    float eMaxSizeEdges = 1;
+    float eMaxSizeEdges = 2;
     float eMinSizeEdges = 1;
     
     final public void changeSizeEdges(){
@@ -978,7 +1326,8 @@ public class NetLayout extends Observable {
             {
                 
                 String styleEdge = ed.getStyle();
-                styleEdge = styleEdge.replace(mxConstants.STYLE_STROKEWIDTH+"=",mxConstants.STYLE_STROKEWIDTH+"=1;");
+                
+                styleEdge = styleEdge.replaceAll("strokeWidth=[^;]*;","strokeWidth=1;");
                 int indexStyleEdge = styleEdge.indexOf(mxConstants.STYLE_STROKEWIDTH);
             
                 Object[] edd = {ed};
@@ -987,7 +1336,7 @@ public class NetLayout extends Observable {
             }
             graph2.getModel().endUpdate();
         }
-        else{
+        else if(getSizeEdge().equals("Stroke Edges")){
             graph2.getModel().beginUpdate();
             
             CustomAttributes att = (CustomAttributes) listEdgesJgraph.get(0).getValue();
@@ -1008,18 +1357,23 @@ public class NetLayout extends Observable {
             {
                     
                 float maxSize = 8f;
-                float minSize = 1f;
+                float minSize = 0.5f;
 
-                //x = y * ( max - min) / (vMax - vMin) + min
+                
                 att = (CustomAttributes) ed.getValue();
-                float insize = (att.getWeight() * (maxSize - minSize) / (eMaxSizeEdges - eMinSizeEdges)) + minSize;
+                
+                //x = y * ( max - min) / (vMax - vMin) + min
+                //float insize = att.getWeight() * (maxSize - minSize) / (eMaxSizeEdges - eMinSizeEdges) + minSize;
+                
+                //v’ = (v-min)/(max-min) * (newmax-newmin) + newmin
+                float insize = (att.getWeight() - eMinSizeEdges) / (eMaxSizeEdges - eMinSizeEdges) * (maxSize - minSize) + minSize;
                 
                 if(insize == Float.POSITIVE_INFINITY)
                     insize = 1f;
 
                 
                 String styleEdge = ed.getStyle();
-                styleEdge = styleEdge.replace(mxConstants.STYLE_STROKEWIDTH+"=1;",mxConstants.STYLE_STROKEWIDTH+"="+insize+";");
+                styleEdge = styleEdge.replaceAll("strokeWidth=[^;]*;","strokeWidth="+insize+";");
                 
                 Object[] edd = {ed};
                 graph2.setCellStyle(styleEdge, edd);
@@ -1174,7 +1528,7 @@ public class NetLayout extends Observable {
 
            
         }
-        else if(getColorEdge().equals("Metadata Without Time"))
+        else if(getColorEdge().equals("Metadata File"))
         {
             String[] communitiesColors = new String[100000];
             
@@ -1183,6 +1537,7 @@ public class NetLayout extends Observable {
 
             JFileChooser openDialog = new JFileChooser();
             String filename = "";
+            filename = f.getPathDataset();
 
             openDialog.setMultiSelectionEnabled(false);
             openDialog.setDialogTitle("Open file");
@@ -1386,7 +1741,7 @@ public class NetLayout extends Observable {
                 }
             }
         }
-        else{
+        else if(getColorEdge().equals("Scalar Color")){
             graph2.getModel().beginUpdate();
             
             
@@ -1563,8 +1918,10 @@ public class NetLayout extends Observable {
                 graphComponentScalarEdge.getGraph().setCellStyle(styleNode, root);
             }
             graphComponentScalarEdge.getGraph().getModel().endUpdate();
-            
+
         }
+        graphComponentScalarEdge.getGraph().repaint();
+        graphComponentScalarEdge.getGraph().refresh();
     }
     
     
@@ -2327,6 +2684,7 @@ public class NetLayout extends Observable {
                 {
                     CustomAttributes att = (CustomAttributes) v1.getValue();
                     att.setWeight(v1.getEdgeCount());
+                    att.setExternalWeight(v1.getEdgeCount());
                     v1.setValue(att);
                 }
                
@@ -2346,6 +2704,7 @@ public class NetLayout extends Observable {
                 {
                     CustomAttributes att = (CustomAttributes) v2.getValue();
                     att.setWeight(v2.getEdgeCount());
+                    att.setExternalWeight(v2.getEdgeCount());
                     v2.setValue(att);
                 }
                 
@@ -2361,6 +2720,7 @@ public class NetLayout extends Observable {
                         CustomAttributes att = (CustomAttributes) myCell.getValue();
                         att.setTime(time);
                         att.setWeight(att.getWeight() + 1);
+                        att.setExternalWeight(att.getExternalWeight()+ 1);
                         myCell.setValue(att);
                         existEdge = true;
                         
@@ -2373,6 +2733,7 @@ public class NetLayout extends Observable {
                         CustomAttributes att = (CustomAttributes) myCell.getValue();
                         att.setTime(time);
                         att.setWeight(att.getWeight() + 1);
+                        att.setExternalWeight(att.getExternalWeight()+ 1);
                         myCell.setValue(att);
                         existEdge = true;
                     }
@@ -2684,7 +3045,8 @@ public class NetLayout extends Observable {
             graph2.moveCells(root, randomNumX , randomNumY);
         }
     }
-
+    
+    
     /**
      * @return the typeColorEdge
      */
@@ -2824,5 +3186,349 @@ public class NetLayout extends Observable {
         return Math.sqrt(getVariance());
     }
 
+    public void strongWeakTies() throws IOException
+   {
+       ArrayList<String> strongTies = new ArrayList();
+       ArrayList<String> weakTies = new ArrayList();
+       String resultingFile = "";
+       int threshold = 38;
+       
+        //Edges
+        for(mxCell ed : listEdgesJgraph)
+        {
+            CustomAttributes att = (CustomAttributes) ed.getValue();
+            
+            
+            if(att.getWeight() > threshold)//Strong Tie = 0
+            {
+                resultingFile += ed.getId() + " 0\r\n";
+                strongTies.add(att.getLabel());
+            }
+            else//Weak Tie = 1
+            { 
+                resultingFile += ed.getId() + " 1\r\n";
+                weakTies.add(att.getLabel());
+            }
+        }
+        
+        // Cria arquivo
+        File file = new File("teste.txt");
 
+        // Se o arquivo nao existir, ele gera
+        if (!file.exists()) {
+            file.createNewFile();
+        }
+        
+        // Prepara para escrever no arquivo
+        FileWriter fw = new FileWriter(file.getAbsoluteFile());
+        BufferedWriter bw = new BufferedWriter(fw);
+
+        // Escreve e fecha arquivo
+        bw.write(resultingFile);
+        bw.close();
+        
+        int x = 1;
+   }
+    
+    public HashMap<Integer, java.util.List<InlineNodeAttribute>> communities;
+    public ArrayList<InlineNodeAttribute> listAttNodesMainForm;
+
+    public void setShowIntraEdgesCommunities(boolean selected) {
+        
+        ArrayList<mxCell> listIntraEdges = new ArrayList();
+        
+        for(int j = 0; j < communities.size(); j++)
+        {
+
+            
+            for(Object cell : this.listEdgesJgraph)
+            {
+                mxCell edge = (mxCell) cell;
+                boolean achou1 = false, achou2 = false;
+                
+                InlineNodeAttribute attConvertido = null,attConvertido2 = null;
+                for(InlineNodeAttribute a : listAttNodesMainForm)
+                {
+                    if(a.getId_original() == Integer.parseInt(edge.getSource().getId()))
+                    {
+                        attConvertido = a;
+                        achou1 = true;
+                    }
+                    if(a.getId_original() == Integer.parseInt(edge.getTarget().getId()))
+                    {
+                        attConvertido2 = a;
+                        achou2 = true;
+                    }
+                    if(achou1 && achou2)
+                        break;
+                }
+                
+                if(communities.get(j).contains(attConvertido) && communities.get(j).contains(attConvertido2))
+                {
+                    listIntraEdges.add(edge);
+                    //conteudoArquivo2 += edge.getSource().getId() + " "+ edge.getTarget().getId()+" "+ (j+1) + System.getProperty("line.separator");
+                    //conteudoArquivo2 += edge.getTarget().getId() + " "+ edge.getSource().getId()+" "+ (j+1) + System.getProperty("line.separator");
+                }
+            }
+            
+           
+        }
+                
+        graph2.getModel().beginUpdate(); 
+        if(selected)
+        {
+            for(mxCell ed : listEdgesJgraph)
+            {
+                if(listIntraEdges.contains(ed))
+                    ed.setVisible(true);
+                else
+                    ed.setVisible(false);
+            }
+        }
+        else
+        {          
+            for(mxCell ed : listEdgesJgraph)
+            {
+                ed.setVisible(false);
+            }
+        }
+        graph2.getModel().endUpdate();
+        graph2.refresh();
+        this.showEdges = showEdges;
+        
+    }
+
+    public void setShowInterEdgesCommunities(boolean selected) {
+        
+        
+        ArrayList<Object> listInterEdges = new ArrayList();
+        
+        for(int j = 0; j < communities.size(); j++)
+        {
+
+            
+            for(Object cell : this.listEdgesJgraph)
+            {
+                mxCell edge = (mxCell) cell;
+                boolean achou1 = false, achou2 = false;
+                
+                InlineNodeAttribute attConvertido = null,attConvertido2 = null;
+                for(InlineNodeAttribute a : listAttNodesMainForm)
+                {
+                    if(a.getId_original() == Integer.parseInt(edge.getSource().getId()))
+                    {
+                        attConvertido = a;
+                        achou1 = true;
+                    }
+                    if(a.getId_original() == Integer.parseInt(edge.getTarget().getId()))
+                    {
+                        attConvertido2 = a;
+                        achou2 = true;
+                    }
+                    if(achou1 && achou2)
+                        break;
+                }
+                
+                if(communities.get(j).contains(attConvertido) && communities.get(j).contains(attConvertido2))
+                {
+                    listInterEdges.add(edge);
+                }
+            }
+            
+           
+        }
+                
+        graph2.getModel().beginUpdate(); 
+        if(selected)
+        {
+            for(mxCell ed : listEdgesJgraph)
+            {
+                if(!listInterEdges.contains(ed))
+                    ed.setVisible(true);
+                else
+                    ed.setVisible(false);
+            }
+        }
+        else
+        {          
+            for(mxCell ed : listEdgesJgraph)
+            {
+                ed.setVisible(false);
+            }
+        }
+        graph2.getModel().endUpdate();
+        graph2.refresh();
+        this.showEdges = showEdges;
+        
+    }
+    
+    public HashMap<String,Integer> edgeWeight = new HashMap();
+        
+
+    public void changeWeightEdges() {
+        
+        graph2.getModel().beginUpdate(); 
+        if(getWeightEdge().equals("Degree"))
+        {
+            for(mxCell ed : listEdgesJgraph)
+            {
+                CustomAttributes att = (CustomAttributes) ed.getValue();
+                att.setWeight(att.getExternalWeight()); //recupera o degree salvo em external weight
+                
+            }
+        }
+        else if(getWeightEdge().equals("Weight File"))
+        {
+            JFileChooser openDialog = new JFileChooser();
+            String filename = "";
+            filename = f.getPathDataset();
+
+            openDialog.setMultiSelectionEnabled(false);
+            openDialog.setDialogTitle("Open file");
+
+
+            openDialog.setSelectedFile(new File(filename));
+            openDialog.setCurrentDirectory(new File(filename));
+
+            int result = openDialog.showOpenDialog(openDialog);
+            if (result == JFileChooser.APPROVE_OPTION) {
+                filename = openDialog.getSelectedFile().getAbsolutePath();
+                openDialog.setSelectedFile(new File(""));
+                BufferedReader file;
+                try {
+                    int BUFFER_SIZE = 1000;
+
+                    file = new BufferedReader(new FileReader(new File(filename)));
+                    
+                    file.mark(BUFFER_SIZE);
+                    
+                    String line = file.readLine();
+                    String[] tokens = line.split(" ");
+                    String tmp, strLine = "";
+                                        
+                    if(tokens.length != 3) // node_origin | node_destiny | weight
+                    {
+                        JOptionPane.showMessageDialog(null,"File format different from the expected. Check the Information button for details.","Error",JOptionPane.ERROR_MESSAGE);
+                    }
+                    else
+                    {
+                        file.reset();
+                        while ((tmp = file.readLine()) != null)
+                        {
+                            strLine = tmp;
+                            String[] tokens2 = strLine.split(" ");
+                            
+                            //create file of weighted edges to calculate commmunities
+                            String edge_string = tokens2[0]+" "+tokens2[1];
+                            String edge_string_inv = tokens2[1]+" "+tokens2[0];
+                            if(edgeWeight.get(edge_string) == null)
+                            {
+                                edgeWeight.put(edge_string_inv, Integer.parseInt(tokens2[2]));
+                                
+                            }
+                            else
+                            {
+                                edgeWeight.put(edge_string, Integer.parseInt(tokens2[2]));
+                            }
+                            
+                            boolean achou = false;
+                            mxCell myCell = (mxCell) ((mxGraphModel)graph2.getModel()).getCell(tokens2[0]+" "+tokens2[1]);
+                            if(myCell == null)
+                            {
+                                myCell = (mxCell) ((mxGraphModel)graph2.getModel()).getCell(tokens2[1]+" "+tokens2[0]);
+                                if(myCell != null)
+                                {
+                                    achou = true;
+                                }
+                            }
+                            else
+                                achou = true;
+                            if(achou)
+                            {
+                                CustomAttributes att = (CustomAttributes) myCell.getValue();
+                                att.setWeight(Integer.parseInt(tokens2[2]));
+                            }
+                        }
+                    }
+                }catch (FileNotFoundException ex) {
+                    Logger.getLogger(OpenDataSetDialog.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (IOException ex) {
+                    Logger.getLogger(OpenDataSetDialog.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            }
+        }
+        graph2.getModel().endUpdate();
+        graph2.refresh();
+    }
+
+    public void setWeightEdge(String toString) {
+        this.weightEdge = toString;
+    }
+
+    public String getWeightEdge() {
+        return this.weightEdge;
+    }
+    
+    public HashMap<String, String> changeLabelNodes(){
+        HashMap<String, String> newIdList = new HashMap();
+        
+        JFileChooser openDialog = new JFileChooser();
+        String filename = "";
+        filename = f.getPathDataset();
+
+        openDialog.setMultiSelectionEnabled(false);
+        openDialog.setDialogTitle("Open file");
+
+        openDialog.setSelectedFile(new File(filename));
+        openDialog.setCurrentDirectory(new File(filename));
+
+        int result = openDialog.showOpenDialog(openDialog);
+        if (result == JFileChooser.APPROVE_OPTION) {
+            filename = openDialog.getSelectedFile().getAbsolutePath();
+            openDialog.setSelectedFile(new File(""));
+            BufferedReader file;
+            try {
+                file = new BufferedReader(new FileReader(new File(filename)));
+                String line = file.readLine();
+                String[] tokens = line.split(" ");
+                String tmp, strLine = "";
+
+                if(tokens.length != 2)
+                {
+                    JOptionPane.showMessageDialog(null,"File format different from the expected. Check the Information button for details.","Error",JOptionPane.ERROR_MESSAGE);
+                }
+                else
+                {
+                    newIdList.put(tokens[0],tokens[1]);
+                    while ((tmp = file.readLine()) != null)
+                    {
+                        strLine = tmp;
+                        String[] tokens2 = strLine.split(" ");
+                        newIdList.put(tokens2[0],tokens2[1]);
+                    }
+
+                    graph2.getModel().beginUpdate(); 
+
+                    //All nodes graph
+                    Object[] roots = graph2.getChildCells(graph2.getDefaultParent(), true, false);
+                    for (Object root1 : roots) {
+                        mxCell cell = (mxCell) root1;
+                        CustomAttributes att = (CustomAttributes) cell.getValue();
+                        if(newIdList.get(att.getLabel()) != null)
+                        {
+                            att.setLabel(newIdList.get(att.getLabel()));
+                        }
+                    }
+                    graph2.getModel().endUpdate();
+                    graph2.refresh();
+                    graph2.repaint(); 
+                }
+            }catch (FileNotFoundException ex) {
+               Logger.getLogger(OpenDataSetDialog.class.getName()).log(Level.SEVERE, null, ex);
+           } catch (IOException ex) {
+               Logger.getLogger(OpenDataSetDialog.class.getName()).log(Level.SEVERE, null, ex);
+           }
+        }
+        return newIdList;
+    }
 }

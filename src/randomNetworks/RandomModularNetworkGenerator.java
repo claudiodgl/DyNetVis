@@ -76,7 +76,7 @@ public class RandomModularNetworkGenerator {
     
     
 //Converte a rede complexa gerada no python para uma rede temporal com repetição de arestas ao longo do tempo
-    public static void main(String a[]) {
+ //   public static void main(String a[]) {
         //String novaRede = converteRedeInput();
         
         //if(novaRede == "")
@@ -87,8 +87,8 @@ public class RandomModularNetworkGenerator {
         
         //ArrayList arestasRede = new ArrayList<String>(Arrays.asList(novaRede.split("\r\n")));
         
-    }
-  
+ //   }
+ /* 
     public static String converteRedeInput(String nomeRede, int qtdArquivo)
     {
         ArrayList<String> arestasRedeLida = new ArrayList<>();
@@ -139,6 +139,6 @@ public class RandomModularNetworkGenerator {
             return novaRedeString;
         }
     }
-    
+    */
     
 }

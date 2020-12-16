@@ -65,7 +65,7 @@ public class JSonParser {
         ArrayList<Integer> tempIds = new ArrayList<Integer>();
         ArrayList<String> edges = new ArrayList<String>();
         try{
-            file = new BufferedReader(new FileReader(new File("d://sex_dy_1.dat")));
+            file = new BufferedReader(new FileReader(new File("")));
             while((line = file.readLine()) != null) {
                 tokens = line.split(" ");
                 try {
@@ -91,7 +91,7 @@ public class JSonParser {
             
             BufferedWriter escritor = null; //objeto escritor
             try{
-                escritor = new BufferedWriter(new FileWriter(new File("D:\\teste.json")));
+                escritor = new BufferedWriter(new FileWriter(new File("")));
             //Instanciação do objeto escritor
             escritor.write(ret); //Gravação do texto
             escritor.flush(); //descarga do buffer de escrita

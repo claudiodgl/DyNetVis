@@ -57,8 +57,22 @@ import java.util.ArrayList;
  * @author Claudio Linhares
  */
 public class CustomAttributes implements Serializable{
+
+    /**
+     * @return the externalWeight
+     */
+    public int getExternalWeight() {
+        return externalWeight;
+    }
+
+    /**
+     * @param externalWeight the externalWeight to set
+     */
+    public void setExternalWeight(int externalWeight) {
+        this.externalWeight = externalWeight;
+    }
     
-private int weight, weightTemp;
+private int weight, weightTemp, externalWeight;
 private ArrayList<Integer> time;
 private boolean isNode, isEdge, isFirst;
 private String label;
@@ -68,6 +82,7 @@ public CustomAttributes(int time, int weight, String label, boolean isEdge, bool
     this.time.add(time);
     
     this.weight = weight;
+    this.externalWeight = weight;
     this.label = label;
     this.isEdge = isEdge;
     this.isNode = isNode;

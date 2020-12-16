@@ -56,9 +56,23 @@ import java.util.ArrayList;
  */
 public class MatrixNodeAttribute{
 
+    /**
+     * @return the label
+     */
+    public String getLabel() {
+        return label;
+    }
+
+    /**
+     * @param label the label to set
+     */
+    public void setLabel(String label) {
+        this.label = label;
+    }
+
     private int x_original, y_original, x_atual, y_atual;
     private ArrayList<Integer> listTime;
-    private String id_original, communityColor,nodeBorderColor;
+    private String id_original, communityColor,nodeBorderColor, label;
     private boolean nodeIndice,upperTriangularNode;
     
     public MatrixNodeAttribute(String id_original, int x_original, int y_original, boolean nodeIndice, boolean upperTriangularNode) {
